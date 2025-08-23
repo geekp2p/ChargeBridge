@@ -13,7 +13,7 @@ Minimal orchestrator for EV charging sessions using OCPP 1.6.
 2. Create and activate an environment and install dependencies:
 
 ```bash
-conda create -n chargebridge python=3.9
+conda create -n chargebridge python=3.12
 conda activate chargebridge
 pip install websockets
 ```
