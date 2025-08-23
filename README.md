@@ -156,7 +156,7 @@ curl -X POST http://localhost:7071/unplug/1
 curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/history
 ```
 
-The response includes `meterStart`, `meterStop`, `energy` (Wh), and `duration` (seconds) for each session.
+The response includes `meterStart`, `meterStop`, `energy` (Wh), and `durationSecs` (seconds) for each session.
 
 ---
 

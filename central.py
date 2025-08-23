@@ -274,7 +274,7 @@ class CentralSystem(ChargePoint):
         if session_info:
             start_time = session_info.get("start_time")
             stop_time = _parse_timestamp(timestamp)
-            duration = (stop_time - start_time).total_seconds() if start_time else 0
+            duration_secs = (stop_time - start_time).total_seconds() if start_time else 0
             meter_start = session_info.get("meter_start", meter_stop)
             energy = meter_stop - meter_start
             record = {
@@ -286,7 +286,7 @@ class CentralSystem(ChargePoint):
                 "energy": energy,
                 "startTime": start_time.isoformat() if start_time else None,
                 "stopTime": stop_time.isoformat(),
-                "duration": duration,
+                "durationSecs": duration_secs,
             }
             self.completed_sessions.append(record)
             logging.info(f"Session summary: {record}")
@@ -362,6 +362,8 @@ class ActiveSession(BaseModel):
 
 
 class CompletedSession(BaseModel):
+    """Summary of a finished charging transaction."""
+
     cpid: str
     connectorId: int
     idTag: str
@@ -371,7 +373,7 @@ class CompletedSession(BaseModel):
     energy: int
     startTime: str
     stopTime: str
-    duration: float
+    durationSecs: float
 
 
 class ConnectorStatus(BaseModel):
