@@ -31,3 +31,67 @@ curl -X POST http://localhost:8080/api/v1/release -H "Content-Type: application/
 | `POST` | `/charge/stop`    | หยุดการชาร์จโดยระบุ `connectorId` โดยตรง\:codex-file-citation                    |
 | `POST` | `/api/v1/release` | ปลดล็อกหัวชาร์จ (หากไม่มีธุรกรรมกำลังใช้งาน)\:codex-file-citation                |
 | `GET`  | `/api/v1/active`  | ตรวจสอบรายการ session ที่กำลังใช้งานอยู่ทั้งหมด\:codex-file-citation             |
+
+:: ===========================
+:: Connector 1
+:: ===========================
+
+:: Plug connector 1
+curl -X POST http://localhost:7071/plug/1
+
+:: Start charging connector 1
+curl -X POST http://localhost:8080/api/v1/start -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":1,\"id_tag\":\"VID:FCA47A147858\"}"
+
+:: Check active sessions
+curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/active
+
+:: Stop charging connector 1 by transactionId
+curl -X POST http://localhost:8080/api/v1/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"transactionId\":1}"
+
+:: Check active sessions again
+curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/active
+
+:: Unplug connector 1
+curl -X POST http://localhost:7071/unplug/1
+
+:: Health check
+curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/health
+
+:: Stop charging connector 1 (direct by connectorId)
+curl -X POST http://localhost:8080/charge/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":1}"
+
+:: Release connector 1
+curl -X POST http://localhost:8080/api/v1/release -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":1}"
+
+
+:: ===========================
+:: Connector 2
+:: ===========================
+
+:: Plug connector 2
+curl -X POST http://localhost:7071/plug/2
+
+:: Start charging connector 2
+curl -X POST http://localhost:8080/api/v1/start -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":2,\"id_tag\":\"VID:FCA47A147858\"}"
+
+:: Check active sessions
+curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/active
+
+:: Stop charging connector 2 by transactionId
+curl -X POST http://localhost:8080/api/v1/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"transactionId\":2}"
+
+:: Check active sessions again
+curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/active
+
+:: Unplug connector 2
+curl -X POST http://localhost:7071/unplug/2
+
+:: Health check
+curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/health
+
+:: Stop charging connector 2 (direct by connectorId)
+curl -X POST http://localhost:8080/charge/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":2}"
+
+:: Release connector 2
+curl -X POST http://localhost:8080/api/v1/release -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":2}"
+
