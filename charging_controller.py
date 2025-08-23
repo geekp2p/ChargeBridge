@@ -3,7 +3,8 @@
 central.py coordinates the high-level flow while delegating OCPP
 communication and meter handling to dedicated modules.  This layout keeps
 responsibilities separated and makes the system easier to extend for other
-charging networks besides Gresgying.
+charging networks.  The demo focuses on Gresgying 120–180 kW DC chargers
+but the code paths remain compatible with other vendors and OCPP versions.
 """
 
 import asyncio
@@ -13,7 +14,12 @@ from ocpp_client import OCPPClient
 
 async def run_demo() -> None:
     """Demonstrate starting and stopping a charging session."""
-    client = OCPPClient("ws://example.com/ocpp", "CP_1")
+    client = OCPPClient(
+        "ws://example.com/ocpp",
+        "CP_1",
+        ocpp_protocol="ocpp1.6",
+        charger_model="Gresgying 120-180 kW DC",
+    )
     session = ChargingSession(client, connector_id=1, id_tag="DEMO")
 
     # In a real system meter values would be retrieved from the charger.

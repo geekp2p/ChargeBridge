@@ -7,22 +7,30 @@ import websockets
 
 
 class OCPPClient:
-    """Minimal OCPP 1.6 client for interacting with charging stations.
+    """Minimal OCPP client for interacting with charging stations.
 
-    This client focuses on the subset of messages required for starting
-    and stopping transactions.  It was written with Gresgying stations in
-    mind but keeps the messaging generic so other vendors can be supported
-    as well.
+    The client targets OCPP 1.6j by default but the WebSocket subprotocol
+    can be adjusted to support newer revisions.  It was written with
+    Gresgying 120–180 kW DC stations in mind yet keeps messaging
+    generic so other vendors and models can be supported as well.
     """
 
-    def __init__(self, uri: str, charge_point_id: str) -> None:
+    def __init__(
+        self,
+        uri: str,
+        charge_point_id: str,
+        ocpp_protocol: str = "ocpp1.6",
+        charger_model: str = "Gresgying 120-180 kW DC",
+    ) -> None:
         self.uri = uri
         self.charge_point_id = charge_point_id
+        self.ocpp_protocol = ocpp_protocol
+        self.charger_model = charger_model
         self._ws: websockets.WebSocketClientProtocol | None = None
 
     async def connect(self) -> None:
-        """Establish a WebSocket connection using the OCPP 1.6 subprotocol."""
-        self._ws = await websockets.connect(self.uri, subprotocols=["ocpp1.6"])
+        """Establish a WebSocket connection using the configured subprotocol."""
+        self._ws = await websockets.connect(self.uri, subprotocols=[self.ocpp_protocol])
 
     async def close(self) -> None:
         if self._ws is not None:
