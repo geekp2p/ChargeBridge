@@ -13,14 +13,14 @@ from ocpp_client import OCPPClient
 
 
 async def run_demo() -> None:
-    """Demonstrate starting and stopping a charging session."""
-    client = OCPPClient(
-        "ws://example.com/ocpp",
-        "CP_1",
-        ocpp_protocol="ocpp1.6",
-        charger_model="Gresgying 120-180 kW DC",
-    )
-    session = ChargingSession(client, connector_id=1, id_tag="DEMO")
+    """Demonstrate starting and stopping a charging session."""␊
+    client = OCPPClient(␊
+        "ws://localhost:9000/ocpp/CP_1",
+        "CP_1",␊
+        ocpp_protocol="ocpp1.6",␊
+        charger_model="Gresgying 120-180 kW DC",␊
+    )␊
+    session = ChargingSession(client, connector_id=1, id_tag="DEMO")␊
 
     # In a real system meter values would be retrieved from the charger.
     start_response = await session.start(meter_start=0)
