@@ -27,6 +27,13 @@ connected_cps: Dict[str, "CentralSystem"] = {}
 _tx_counter = itertools.count(1)
 
 
+def _parse_timestamp(ts: str) -> datetime:
+    """Parse an ISO8601 timestamp and fall back to now on error."""
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except Exception:
+        return datetime.utcnow()
+
 def make_display_message_call(message_type: str, uri: str):
     payload = {"message_type": message_type, "uri": uri}
     if hasattr(call, "DisplayMessage"):
@@ -37,7 +44,7 @@ def make_display_message_call(message_type: str, uri: str):
             except Exception:
                 continue
     try:
-        return call.DataTransferPayload("com.yourcompany.payment", "DisplayQRCode", json.dumps(payload))
+        return call.DataTransfer("com.yourcompany.payment", "DisplayQRCode", json.dumps(payload))
     except Exception as e:
         logging.error(f"Failed to build DataTransfer fallback: {e}")
         raise
@@ -51,9 +58,10 @@ class CentralSystem(ChargePoint):
         self.pending_start: Dict[int, Dict[str, Any]] = {}
         self.connector_status: Dict[int, str] = {}
         self.no_session_tasks: Dict[int, asyncio.Task] = {}
+        self.completed_sessions: List[Dict[str, Any]] = []
 
     async def remote_start(self, connector_id: int, id_tag: str):
-        req = call.RemoteStartTransactionPayload(
+        req = call.RemoteStartTransaction(
             id_tag=id_tag,
             connector_id=connector_id
         )
@@ -67,7 +75,7 @@ class CentralSystem(ChargePoint):
         return status
 
     async def remote_stop(self, transaction_id: int):
-        req = call.RemoteStopTransactionPayload(transaction_id=transaction_id)
+        req = call.RemoteStopTransaction(transaction_id=transaction_id)
         logging.info(f"→ RemoteStopTransaction to {self.id} (tx={transaction_id})")
         resp = await self.call(req)
         status = getattr(resp, "status", None)
@@ -76,14 +84,14 @@ class CentralSystem(ChargePoint):
         return status
 
     async def change_configuration(self, key: str, value: str):
-        req = call.ChangeConfigurationPayload(key=key, value=value)
+        req = call.ChangeConfiguration(key=key, value=value)
         logging.info(f"→ ChangeConfiguration to {self.id} ({key}={value})")
         resp = await self.call(req)
         logging.info(f"← ChangeConfiguration.conf: {resp}")
         return getattr(resp, "status", None)
 
     async def unlock_connector(self, connector_id: int):
-        req = call.UnlockConnectorPayload(connector_id=connector_id)
+        req = call.UnlockConnector(connector_id=connector_id)
         logging.info(f"→ UnlockConnector to {self.id} (connector={connector_id})")
         resp = await self.call(req)
         logging.info(f"← UnlockConnector.conf: {resp}")
@@ -105,10 +113,10 @@ class CentralSystem(ChargePoint):
         finally:
             self.no_session_tasks.pop(connector_id, None)
 
-    @on(Action.BootNotification)
+    @on(Action.boot_notification)
     async def on_boot_notification(self, charge_point_model, charge_point_vendor, **kwargs):
         logging.info(f"← BootNotification from vendor={charge_point_vendor}, model={charge_point_model}")
-        response = call_result.BootNotificationPayload(
+        response = call_result.BootNotification(
             current_time=datetime.utcnow().isoformat() + "Z",
             interval=300,
             status=RegistrationStatus.accepted
@@ -116,7 +124,7 @@ class CentralSystem(ChargePoint):
 
         supported_keys: List[str] = []
         try:
-            conf_req = call.GetConfigurationPayload()
+            conf_req = call.GetConfiguration()
             conf_resp = await asyncio.wait_for(self.call(conf_req), timeout=10)
             items: Any = []
             if hasattr(conf_resp, "configuration_key"):
@@ -138,7 +146,7 @@ class CentralSystem(ChargePoint):
             logging.warning(f"Failed to fetch supported configuration keys: {e}")
 
         if "AuthorizeRemoteTxRequests" in supported_keys:
-            cfg_req = call.ChangeConfigurationPayload(
+            cfg_req = call.ChangeConfiguration(
                 key="AuthorizeRemoteTxRequests", value="true"
             )
             asyncio.create_task(self._send_change_configuration(cfg_req))
@@ -146,7 +154,7 @@ class CentralSystem(ChargePoint):
         qr_url = "https://your-domain.com/qr?order_id=TEST123"
         target_key = "QRcodeConnectorID1"
         if target_key in supported_keys:
-            change_req = call.ChangeConfigurationPayload(key=target_key, value=qr_url)
+            change_req = call.ChangeConfiguration(key=target_key, value=qr_url)
             asyncio.create_task(self._send_change_configuration(change_req))
         else:
             try:
@@ -164,12 +172,12 @@ class CentralSystem(ChargePoint):
         except Exception as e:
             logging.error(f"!!! ChangeConfiguration/custom failed: {e}")
 
-    @on(Action.Authorize)
+    @on(Action.authorize)
     async def on_authorize(self, id_tag, **kwargs):
         logging.info(f"← Authorize request, idTag={id_tag}")
-        return call_result.AuthorizePayload(id_tag_info={"status": AuthorizationStatus.accepted})
+        return call_result.Authorize(id_tag_info={"status": AuthorizationStatus.accepted})
 
-    @on(Action.StatusNotification)
+    @on(Action.status_notification)
     async def on_status_notification(self, connector_id, error_code, status, **kwargs):
         logging.info(
             f"← StatusNotification: connector {connector_id} → status={status}, errorCode={error_code}"
@@ -185,27 +193,35 @@ class CentralSystem(ChargePoint):
             task = self.no_session_tasks.pop(c_id, None)
             if task:
                 task.cancel()
-        return call_result.StatusNotificationPayload()
+        return call_result.StatusNotification()
 
-    @on(Action.Heartbeat)
+    @on(Action.heartbeat)
     def on_heartbeat(self, **kwargs):
         logging.info("← Heartbeat received")
-        return call_result.HeartbeatPayload(current_time=datetime.utcnow().isoformat() + "Z")
+        return call_result.Heartbeat(current_time=datetime.utcnow().isoformat() + "Z")
 
-    @on(Action.MeterValues)
+    @on(Action.meter_values)
     async def on_meter_values(self, connector_id, meter_value, **kwargs):
         logging.info(f"← MeterValues from connector {connector_id}: {meter_value}")
-        return call_result.MeterValuesPayload()
+        return call_result.MeterValues()
 
-    @on(Action.DataTransfer)
+    @on(Action.data_transfer)
     async def on_data_transfer(self, vendor_id, message_id=None, data=None, **kwargs):
         logging.info(
             f"← DataTransfer: vendorId={vendor_id}, messageId={message_id}, data={data}"
         )
-        return call_result.DataTransferPayload(status=DataTransferStatus.accepted)
+        return call_result.DataTransfer(status=DataTransferStatus.accepted)
 
-    @on(Action.StartTransaction)
-    async def on_start_transaction(self, connector_id, id_tag, meter_start, timestamp, reservation_id=None, **kwargs):
+    @on(Action.start_transaction)
+    async def on_start_transaction(
+        self,
+        connector_id,
+        id_tag,
+        meter_start,
+        timestamp,
+        reservation_id=None,
+        **kwargs,
+    ):
         expected = self.pending_remote.get(int(connector_id))
         if expected is not None and expected != id_tag:
             logging.warning(
@@ -214,7 +230,7 @@ class CentralSystem(ChargePoint):
             await self.unlock_connector(int(connector_id))
             self.pending_remote.pop(int(connector_id), None)
             self.pending_start.pop(int(connector_id), None)
-            return call_result.StartTransactionPayload(
+            return call_result.StartTransaction(
                 transaction_id=0,
                 id_tag_info={"status": AuthorizationStatus.invalid},
             )
@@ -226,6 +242,8 @@ class CentralSystem(ChargePoint):
         info = {
             "transaction_id": tx_id,
             "id_tag": id_tag,
+            "meter_start": meter_start,
+            "start_time": _parse_timestamp(timestamp),
         }
         if pending and "vid" in pending:
             info["vid"] = pending["vid"]
@@ -237,18 +255,41 @@ class CentralSystem(ChargePoint):
             f"← StartTransaction from {self.id}: connector={connector_id}, idTag={id_tag}, meterStart={meter_start}, vid={info.get('vid')}"
         )
         logging.info(f"→ Assign transactionId={tx_id}")
-        return call_result.StartTransactionPayload(
+        return call_result.StartTransaction(
             transaction_id=tx_id,
             id_tag_info={"status": AuthorizationStatus.accepted},
         )
 
-    @on(Action.StopTransaction)
+    @on(Action.stop_transaction)
     async def on_stop_transaction(self, transaction_id, meter_stop, timestamp, **kwargs):
-        for c_id, info in list(self.active_tx.items()):
+        session_info = None
+        c_id = None
+        for conn_id, info in list(self.active_tx.items()):
             if info.get("transaction_id") == int(transaction_id):
-                self.active_tx.pop(c_id, None)
+                session_info = info
+                c_id = conn_id
+                self.active_tx.pop(conn_id, None)
                 break
         logging.info(f"← StopTransaction from {self.id}: tx={transaction_id}, meterStop={meter_stop}")
+        if session_info:
+            start_time = session_info.get("start_time")
+            stop_time = _parse_timestamp(timestamp)
+            duration = (stop_time - start_time).total_seconds() if start_time else 0
+            meter_start = session_info.get("meter_start", meter_stop)
+            energy = meter_stop - meter_start
+            record = {
+                "connectorId": c_id,
+                "transactionId": int(transaction_id),
+                "idTag": session_info.get("id_tag", ""),
+                "meterStart": meter_start,
+                "meterStop": meter_stop,
+                "energy": energy,
+                "startTime": start_time.isoformat() if start_time else None,
+                "stopTime": stop_time.isoformat(),
+                "duration": duration,
+            }
+            self.completed_sessions.append(record)
+            logging.info(f"Session summary: {record}")
         return call_result.StopTransactionPayload(
             id_tag_info={"status": AuthorizationStatus.accepted}
         )
@@ -318,6 +359,25 @@ class ActiveSession(BaseModel):
     connectorId: int
     idTag: str
     transactionId: int
+
+
+class CompletedSession(BaseModel):
+    cpid: str
+    connectorId: int
+    idTag: str
+    transactionId: int
+    meterStart: int
+    meterStop: int
+    energy: int
+    startTime: str
+    stopTime: str
+    duration: float
+
+
+class ConnectorStatus(BaseModel):
+    cpid: str
+    connectorId: int
+    status: str
 
 
 def require_key(x_api_key: str | None):
@@ -428,6 +488,24 @@ async def api_active_sessions():
                 )
             )
     return {"sessions": [s.dict() for s in sessions]}
+
+
+@app.get("/api/v1/history")
+async def api_session_history():
+    sessions: list[CompletedSession] = []
+    for cpid, cp in connected_cps.items():
+        for record in cp.completed_sessions:
+            sessions.append(CompletedSession(cpid=cpid, **record))
+    return {"sessions": [s.dict() for s in sessions]}
+
+
+@app.get("/api/v1/status")
+async def api_connector_status():
+    statuses: list[ConnectorStatus] = []
+    for cpid, cp in connected_cps.items():
+        for conn_id, status in cp.connector_status.items():
+            statuses.append(ConnectorStatus(cpid=cpid, connectorId=conn_id, status=status))
+    return {"connectors": [s.dict() for s in statuses]}
 
 
 async def run_http_api():

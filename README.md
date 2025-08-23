@@ -9,6 +9,7 @@ stations while remaining flexible for other models.
 - `OCPPClient` for WebSocket communication with OCPP 1.6j and newer versions
 - `ChargingSession` dataclass to manage meter readings and transaction IDs
 - `central.py` orchestrator for demo start/stop session flow
+- Session history and connector status APIs for energy use and plug state monitoring
 - Primarily tested with Gresgying 120–180 kW DC chargers but adaptable to other stations
 
 ## Conda Installation
@@ -146,6 +147,26 @@ Expected result: `{"sessions":[]}`
 ```bash
 curl -X POST http://localhost:7071/unplug/1
 ```
+
+---
+
+### 8. ตรวจสอบประวัติการชาร์จและพลังงานที่ใช้
+
+```bash
+curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/history
+```
+
+The response includes `meterStart`, `meterStop`, `energy` (Wh), and `duration` (seconds) for each session.
+
+---
+
+### 9. ตรวจสอบสถานะหัวชาร์จ
+
+```bash
+curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/status
+```
+
+Lists each connector with its current OCPP status.
 
 ---
 
