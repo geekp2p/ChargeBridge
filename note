@@ -1,97 +1,125 @@
-python -m compileall -q .
+chargeforge-sim/
+├─ sim/
+│  ├─ evse.py                 # main: EVSE emulator (OCPP 1.6J) + state machine + HTTP control
+│  ├─ state_machine.py        # สถานะ EVSE & helper
+│  ├─ ocpp_handlers.py        # OCPP handlers (Boot/Status/Meter/Start/Stop/DataTransfer)
+│  ├─ config.py               # อ่าน ENV/ค่าเริ่มต้น
+│  └─ requirements.txt        # ocpp, websockets, fastapi, uvicorn ฯลฯ
+├─ docker/
+│  └─ Dockerfile              # อิมเมจ Python 3.11-slim + deps
+├─ compose.yaml               # docker compose สำหรับรัน simulator
+├─ .env.example               # ตัวอย่างค่า ENV (แก้ชื่อ host/CPID ได้)
+├─ Makefile                   # คำสั่ง build/run/stop/logs เร็ว ๆ
+└─ README.md                  # คู่มือสั้น ๆ
 
 
+make build
+make up
+# หรือไม่ใช้ make:
+# docker compose build && docker compose up -d
+
+
+make logs
+
+
+# เสียบหัว
 curl -X POST http://localhost:7071/plug/1
 
+# เสียบและเริ่มชาร์จทันที (auto start)
+curl -X POST "http://localhost:7071/plug/1?auto_start=true&id_tag=AUTO123"
 
-curl -X POST http://localhost:8080/api/v1/start -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":1,\"id_tag\":\"VID:FCA47A147858\"}"
+# เริ่มชาร์จ (local) ใช้ค่า idTag=LOCAL_TAG
+curl -X POST "http://localhost:7071/local_start/1?id_tag=TAG_123"
 
-curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/active
+# หยุดชาร์จ
+curl -X POST http://localhost:7071/local_stop/1
 
-curl -X POST http://localhost:8080/api/v1/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"transactionId\":1}"
-
-curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/active
-
+# ดึงหัวออก
 curl -X POST http://localhost:7071/unplug/1
 
-:: ตรวจสอบ health
-curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/health
+.PHONY: build up down logs restart
 
-:: หยุดการชาร์จโดยระบุ connectorId โดยตรง
-curl -X POST http://localhost:8080/charge/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":1}"
+build:
+\tdocker compose build
 
-:: ปลดล็อกหัวชาร์จ
-curl -X POST http://localhost:8080/api/v1/release -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":1}"
+up:
+\tdocker compose up -d
 
-| Method | URL               | การใช้งาน                                                                        |
-| ------ | ----------------- | -------------------------------------------------------------------------------- |
-| `GET`  | `/api/v1/health`  | ตรวจสอบสถานะของเซิร์ฟเวอร์และเวลาปัจจุบัน\:codex-file-citation                   |
-| `POST` | `/api/v1/start`   | เริ่มการชาร์จ (ต้องมีข้อมูล `cpid`, `connectorId`, `idTag`)\:codex-file-citation |
-| `POST` | `/api/v1/stop`    | หยุดการชาร์จผ่าน `transactionId` หรือ `connectorId`:codex-file-citation          |
-| `POST` | `/charge/stop`    | หยุดการชาร์จโดยระบุ `connectorId` โดยตรง\:codex-file-citation                    |
-| `POST` | `/api/v1/release` | ปลดล็อกหัวชาร์จ (หากไม่มีธุรกรรมกำลังใช้งาน)\:codex-file-citation                |
-| `GET`  | `/api/v1/active`  | ตรวจสอบรายการ session ที่กำลังใช้งานอยู่ทั้งหมด\:codex-file-citation             |
+down:
+\tdocker compose down
 
-:: ===========================
-:: Connector 1
-:: ===========================
+logs:
+\tdocker compose logs -f --tail=200
 
-:: Plug connector 1
-curl -X POST http://localhost:7071/plug/1
-
-:: Start charging connector 1
-curl -X POST http://localhost:8080/api/v1/start -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":1,\"id_tag\":\"VID:FCA47A147858\"}"
-
-:: Check active sessions
-curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/active
-
-:: Stop charging connector 1 by transactionId
-curl -X POST http://localhost:8080/api/v1/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"transactionId\":1}"
-
-:: Check active sessions again
-curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/active
-
-:: Unplug connector 1
-curl -X POST http://localhost:7071/unplug/1
-
-:: Health check
-curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/health
-
-:: Stop charging connector 1 (direct by connectorId)
-curl -X POST http://localhost:8080/charge/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":1}"
-
-:: Release connector 1
-curl -X POST http://localhost:8080/api/v1/release -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":1}"
+restart: down up
 
 
-:: ===========================
-:: Connector 2
-:: ===========================
+✅ pytest tests/test_simulator.py::test_health_endpoint -vv
 
-:: Plug connector 2
-curl -X POST http://localhost:7071/plug/2
+✅ pytest tests/test_simulator.py::test_local_start_stop -vv
 
-:: Start charging connector 2
-curl -X POST http://localhost:8080/api/v1/start -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":2,\"id_tag\":\"VID:FCA47A147858\"}"
+✅ pytest tests/test_simulator.py::test_remote_start_stop -vv
 
-:: Check active sessions
-curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/active
+⚠️ pytest (hung during full suite run; executed tests individually instead)
 
-:: Stop charging connector 2 by transactionId
-curl -X POST http://localhost:8080/api/v1/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"transactionId\":2}"
+curl -X POST -H 'X-API-Key: changeme-123' \
+     -H 'Content-Type: application/json' \
+     -d '{"cpid":"Gresgying02","connectorId":1}' \
+     http://45.136.236.186:8080/api/v1/start
 
-:: Check active sessions again
-curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/active
 
-:: Unplug connector 2
-curl -X POST http://localhost:7071/unplug/2
+curl -X POST \
+     -H 'X-API-Key: changeme-123' \
+     -H 'Content-Type: application/json' \
+     -d '{"cpid":"Gresgying02","connectorId":1}' \
+     http://45.136.236.186:8080/api/v1/start
 
-:: Health check
-curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/health
 
-:: Stop charging connector 2 (direct by connectorId)
-curl -X POST http://localhost:8080/charge/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":2}"
+docker compose --env-file .env up --build -d
 
-:: Release connector 2
-curl -X POST http://localhost:8080/api/v1/release -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":2}"
+docker compose build --no-cache
 
+docker compose --env-file .env up -d
+
+
+# 1) หยุดและลบ container + network + volumes ที่ compose สร้างไว้
+docker compose down -v
+
+# 2) build ใหม่โดยไม่ใช้ cache และสั่ง start แบบ detached
+docker compose --env-file .env up --build --no-cache -d
+
+
+docker image prune -af
+
+docker compose down -v
+docker image prune -af
+docker compose --env-file .env up --build --no-cache -d
+docker compose down -v && docker compose build --no-cache && docker compose --env-file .env up -d
+
+
+# CLI เท่านั้น
+conda create -n ocpp-cli -y python=3.11 pip
+conda activate ocpp-cli
+pip install requests
+
+# CSMS เท่านั้น
+conda create -n ocpp-csms -y python=3.11 pip
+conda activate ocpp-csms
+pip install "ocpp==0.26.0" websockets fastapi "uvicorn[standard]"
+
+
+docker compose --env-file .env build --no-cache
+docker compose --env-file .env up
+
+# เริ่มชาร์จ
+python start_stop.py start Gresgying02 1 DEMO_IDTAG
+
+# หยุดชาร์จ (ระบุ connector เพื่อหา transaction อัตโนมัติ)
+python start_stop.py stop Gresgying02 1 DEMO_IDTAG
+
+
+Y:\emulator\central>curl -X POST http://localhost:7071/plug/1
+
+curl -X POST -H "Content-Type: application/json" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":1}" http://localhost:8080/api/v1/stop
+
+curl -X POST -H "Content-Type: application/json" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":1}" http://localhost:8080/api/v1/start

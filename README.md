@@ -1,181 +1,182 @@
-# ChargeBridge
+# ChargeForge Simulator
 
-Minimal orchestrator for EV charging sessions using OCPP 1.6j.
-The WebSocket subprotocol can be customized for later OCPP versions,
-and the project primarily targets Gresgying 120–180 kW DC charging
-stations while remaining flexible for other models.
+Simulates an OCPP 1.6J charge point that talks JSON over WebSocket. The
+simulator has been exercised against the [Gresgying 120 kW–180 kW DC charging
+station](https://www.gresgying.global/product/120kw-180kw-dc-charging-station.html)
+and is intended for validating backend integrations. A reference CSMS
+implementation is provided in [`HowToUse.me`](HowToUse.me), which shows how to
+run the `central.py` server from the
+[geekp2p/ocpp](https://github.com/geekp2p/ocpp) project when testing with real
+hardware.
 
-## Features
-- `OCPPClient` for WebSocket communication with OCPP 1.6j and newer versions
-- `ChargingSession` dataclass to manage meter readings and transaction IDs
-- `central.py` orchestrator for demo start/stop session flow
-- Session history and connector status APIs for energy use and plug state monitoring
-- Primarily tested with Gresgying 120–180 kW DC chargers but adaptable to other stations
+## ✅ Current features
 
-## Conda Installation
+- RemoteStart/RemoteStop with transactionId tracking per connector
+- `/health` endpoint and Docker healthcheck
+- Reconnect/backoff logic when the CSMS connection drops
+- Basic state machine: Available → Preparing → Charging → Finishing → Available
+- Periodic MeterValues with Wh increasing by a fixed rate
+- HTTP control endpoints: `/plug/{cid}`, `/unplug/{cid}`, `/local_start/{cid}`, `/local_stop/{cid}`. To simulate AutoCharge, `/plug/{cid}?auto_start=true&id_tag=TAG` immediately begins a session with the provided `id_tag`.
+- Uses the `ocpp` Python package with `subprotocols=['ocpp1.6']` for JSON over WebSocket
 
-1. Install [Miniconda or Anaconda](https://docs.conda.io/en/latest/miniconda.html).
-2. Create and activate an environment and install dependencies:
+## 📋 Roadmap / Next Tasks
 
-```bash
-conda create -n chargebridge python=3.12
-conda activate chargebridge
-pip install websockets ocpp fastapi uvicorn
-```
+### 🔶 Core robustness
+- [ ] **Multi-connector concurrency**: ให้ทุก connector เริ่ม/หยุดพร้อมกันได้จริง (ไม่แย่ง state กัน)
+  - Acceptance: สั่ง remote start ที่ connector 1 และ 2 พร้อมกัน → ทั้งสองขึ้น Charging; stop เส้นใดเส้นหนึ่งไม่กระทบอีกเส้น
+  - Implementation hints:
+    - ตรวจโค้ด `send_meter_loop()` วนเฉพาะ `session_active=True` ต่อ connector (OK)
+    - ยืนยันว่า `on_remote_stop()` และ `/local_stop/{cid}` เลือก `txId` ของ **cid นั้น** เท่านั้น
+    - (ทางเลือก) ทำ **per-connector meter task** เพื่อแยกคาบได้อิสระ
 
-## Quick Start
+- [ ] **Fault & Suspended states simulation**
+  - Endpoints ที่ควรเพิ่ม:
+    - `POST /fault/{cid}?code=GroundFailure` → ส่ง `StatusNotification(errorCode=GroundFailure, status=Faulted)`
+    - `POST /suspend_ev/{cid}` / `POST /suspend_evse/{cid}` / `POST /resume/{cid}`
+  - Acceptance: เรียก fault แล้ว CSMS เห็นสถานะ Faulted; resume กลับสู่ Charging/Available ได้
 
-Run the demo orchestrator after the environment is prepared:
+- [ ] **Metering fluctuations & extra measurands**
+  - ENV เสนอ: `NOISE_W_PERCENT=5`, `EXTRA_MEASURANDS="Voltage,Current.Import,Power.Active.Import"`
+  - ปรับ `send_meter_loop()` ให้เพิ่ม jitter (±NOISE%) และแนบ `Voltage/Current/Power` ใน `sampledValue`
+  - Acceptance: ค่า Wh/Power/Voltage/Current ไม่คงที่ทุกคาบ; CSMS รับค่าถูกต้อง
 
-```bash
-python charging_controller.py
-```
+### 🔒 Transport & Ops
+- [ ] **WSS/TLS support**
+  - ENV เสนอ:  
+    `OCPP_WSS=true`, `SSL_VERIFY=true|false`, `CA_CERT=/certs/ca.pem`, `CLIENT_CERT=/certs/client.crt`, `CLIENT_KEY=/certs/client.key`
+  - สร้าง `ssl.SSLContext` แล้วส่งให้ `websockets.connect(..., ssl=ctx)`
+  - Acceptance: เชื่อม `wss://` กับ CSMS ที่เปิด TLS ได้; healthcheck ยัง green
 
-## Local Testing
+- [ ] **/metrics (Prometheus) & /info**
+  - `/metrics`: จำนวน sessions, energy ต่อ connector, error count
+  - `/info`: dump คอนฟิก+สถานะคร่าว ๆ (cpid, connectors, active sessions)
 
-1. Start the included `central.py` server or any OCPP simulator (e.g., `chargeforge-sim`):
+### 🧪 Quality & Future
+- [ ] **Integration tests (pytest)**
+  - เทส flow: plug → local_start → มี MeterValues > 0 → local_stop → กลับ Available
+  - (ถ้าสะดวก) รันคู่กับ CSMS จริงใน compose (service แยก) หรือ mock transport
+- [ ] **OCPP 2.0.1 mode (optional/backlog)**  
+  - ใส่ flag ใน `config.py` แต่ปักหมุด backlog ได้ หากยังใช้ 1.6J เป็นหลัก
 
-```bash
-python central.py
-```
+### Requirements
+- Python 3.10+ (ทดสอบกับ 3.12)
+- ติดตั้ง dependencies ใน `sim/requirements.txt` (โดยใช้ `ocpp` 0.26.0 รองรับ OCPP 1.6J ผ่าน WebSocket)
 
-2. Point the client to the local server in `charging_controller.py` (note the Charge Point ID in the URL):
+### การใช้งาน how to use
 
-```python
-client = OCPPClient(
-    "ws://127.0.0.1:9000/ocpp/CP_1",
-    "CP_1",
-    ocpp_protocol="ocpp1.6",  # adjust for newer versions
-    charger_model="Gresgying 120-180 kW DC",
-)
-```
+# HowToUse
 
-3. Run the orchestrator:
+Instructions for running the reference `central.py` server from [geekp2p/ocpp](https://github.com/geekp2p/ocpp) and testing it with the Gresgying 120 kW–180 kW DC charging station or the ChargeForge simulator.
 
-```bash
-python charging_controller.py
-```
+## 1. Setup `central.py`
+1. Clone the project and save the provided `central.py`.
+2. Install dependencies (Python 3.10+):
+   ```bash
+   pip install ocpp==0.26.0 websockets fastapi uvicorn
+   ```
+3. Start the CSMS:
+   ```bash
+   python central.py
+   ```
+  The server listens on `ws://0.0.0.0:9000/ocpp/<ChargePointID>` and exposes an HTTP API on `http://0.0.0.0:8080`.
+  An interactive console accepts commands such as:
 
-## Testing with a Remote Server
+   ```
+   start <cpid> <connector> [idTag]
+  stop  <cpid> <connector>
+  ```
+   The CSMS auto-enables `AuthorizeRemoteTxRequests` so no manual configuration is required before issuing a remote start.
 
-1. Ensure the remote machine exposes the OCPP port (e.g., `9000`).
-2. Update `charging_controller.py` with the real IP address (e.g., `45.136.236.186`) and include the Charge Point ID in the path:
+## 2. Test with ChargeForge Simulator
+1. Install simulator deps:
+   ```bash
+   pip install -r sim/requirements.txt
+   ```
+2. Start the simulator (connects to `ws://127.0.0.1:9000/ocpp` by default):
+   ```bash
+   python sim/evse.py
+   ```
+3. Use the CSMS HTTP API to control charging:
+   ```bash
+   curl -X POST -H 'Content-Type: application/json' \
+     -d '{"cpid":"TestCP01","connectorId":1,"id_tag":"MY_TAG"}' \
+     http://localhost:8080/api/v1/start
+   ```
+   Provide `id_tag` (or `idTag`) to start the session with a custom idTag. If omitted, a default tag is used. Use `/api/v1/stop` or `/api/v1/active` in a similar way. The simulator will report MeterValues and status updates.
 
-```python
-client = OCPPClient(
-    "ws://45.136.236.186:9000/ocpp/CP_1",
-    "CP_1",
-    ocpp_protocol="ocpp1.6",  # or another supported version
-    charger_model="Gresgying 120-180 kW DC",
-)
-```
-
-3. Start the client:
-
-```bash
-python charging_controller.py
-```
-
-## Connecting a Real Gresgying Charger
-
+## 3. Connecting a real Gresgying charger
 1. Configure the charger to use WebSocket URL `ws://<csms-host>:9000/ocpp/<ChargePointID>` with OCPP 1.6J.
 2. If the charger supports remote operations, invoke `/api/v1/start` and `/api/v1/stop` as above.
-3. Monitor logs from `central.py` for BootNotification, StatusNotification, StartTransaction, and StopTransaction events.
+3. Monitor logs from `central.py` for BootNotification, StatusNotification, StartTransaction and StopTransaction events.
 
-This setup has been validated with a Gresgying 120 kW–180 kW DC charging station using OCPP 1.6J over WebSocket.
+This setup has been validated with a Gresgying 120 kW–180 kW DC charging station using OCPP 1.6J over WebSocket.
 
-## ตัวอย่างการใช้งาน (Example Usage)
+# ตัวอย่างการใช้งาน
 
-The following steps demonstrate a full charging flow via the CSMS APIs. Replace `localhost` with `45.136.236.186` to interact with the live server.
+# คู่มือการจำลองการใช้งาน CSMS (Windows 11 CMD)
 
-### 1. ตรวจสอบว่าไม่มีเซสชัน active
-
-```bash
+## 1. ตรวจสอบว่าไม่มีเซสชัน active
+```
 curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/active
 ```
-
-Expected result: `{"sessions":[]}`
+ควรได้ผลลัพธ์: {"sessions":[]}
 
 ---
 
-### 2. จำลองการเสียบสายที่หัวชาร์จหมายเลข 1
-
-```bash
+## 2. จำลองการเสียบสายที่หัวชาร์จหมายเลข 1
+```
 curl -X POST http://localhost:7071/plug/1
 ```
-
 ---
 
-### 3. สั่งเริ่มชาร์จ (Remote Start) ผ่าน CSMS
-
-```bash
+## 3. สั่งเริ่มชาร์จ (Remote Start) ผ่าน CSMS
+```
 curl -X POST http://localhost:8080/api/v1/start -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":1,\"id_tag\":\"VID:FCA47A147858\"}"
 ```
-
 ---
 
-### 4. ตรวจสอบว่ามีเซสชัน active แล้ว
-
-```bash
+## 4. ตรวจสอบว่ามีเซสชัน active แล้ว
+```
 curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/active
 ```
-
-The session for `Gresgying02` should now include the CSMS-assigned `transactionId`.
+ควรเห็น session ของ Gresgying02 พร้อม transactionId ที่ CSMS กำหนด
 
 ---
 
-### 5. สั่งหยุดชาร์จ (Remote Stop)
-
-```bash
+## 5. สั่งหยุดชาร์จ (Remote Stop)
+```
 curl -X POST http://localhost:8080/api/v1/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"transactionId\":1}"
 ```
-
 ---
 
-### 6. ตรวจสอบอีกครั้งว่าไม่มีเซสชัน active
-
-```bash
+## 6. ตรวจสอบอีกครั้งว่าไม่มีเซสชัน active
+```
 curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/active
 ```
-
-Expected result: `{"sessions":[]}`
+ควรได้ {"sessions":[]}
 
 ---
 
-### 7. ดึงสายออกจากหัวชาร์จหมายเลข 1
-
-```bash
+## 7. ดึงสายออกจากหัวชาร์จหมายเลข 1
+```
 curl -X POST http://localhost:7071/unplug/1
 ```
-
 ---
 
-### 8. ตรวจสอบประวัติการชาร์จและพลังงานที่ใช้
-
-```bash
-curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/history
-```
-
-The response includes `meterStart`, `meterStop`, `energy` (Wh), and `durationSecs` (seconds) for each session.
-
----
-
-### 9. ตรวจสอบสถานะหัวชาร์จ
-
-```bash
-curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/status
-```
-
-Lists each connector with its current OCPP status.
-
----
-
-### ✅ สรุปขั้นตอนการจำลอง
-
+## ✅ สรุปขั้นตอนการจำลอง
 - ขับรถเข้ามา
 - เสียบสาย (plug)
 - เริ่มชาร์จ (remote start)
 - หยุดชาร์จ (remote stop)
 - ถอดสาย (unplug)
 
-Status can be monitored throughout via the CSMS.
+ทั้งหมดสามารถตรวจสอบสถานะได้ผ่าน CSMS อย่างครบถ้วน 🚗⚡
+
+:: ตรวจสอบ health
+curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/health
+
+:: หยุดการชาร์จโดยระบุ connectorId โดยตรง
+curl -X POST http://localhost:8080/charge/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{^"cpid^":^"Gresgying02^",^"connectorId^":1}"
+
+:: ปลดล็อกหัวชาร์จ
+curl -X POST http://localhost:8080/api/v1/release -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{^"cpid^":^"Gresgying02^",^"connectorId^":1}"

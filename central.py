@@ -1,3 +1,5 @@
+# central.py
+
 import asyncio
 import logging
 import json
@@ -17,87 +19,122 @@ from ocpp.v16.enums import (
     DataTransferStatus,
 )
 
+# --- เพิ่ม import สำหรับ HTTP API ---
 from fastapi import FastAPI, HTTPException, Request, Header
 from pydantic import BaseModel, Field, ConfigDict
 import uvicorn
 
 logging.basicConfig(level=logging.INFO)
 
+# === เก็บ reference ของ CP ที่ต่ออยู่ เพื่อเรียกใช้สั่ง start/stop ได้จากคอนโซล/HTTP ===
 connected_cps: Dict[str, "CentralSystem"] = {}
+
+# === ตัวนับ transactionId ที่ CSMS จะ “ออกเลข” ให้ StartTransaction.conf ===
 _tx_counter = itertools.count(1)
 
 
-def _parse_timestamp(ts: str) -> datetime:
-    """Parse an ISO8601 timestamp and fall back to now on error."""
-    try:
-        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
-    except Exception:
-        return datetime.utcnow()
-
 def make_display_message_call(message_type: str, uri: str):
+    """
+    สร้าง fallback สำหรับแสดง QR:
+    1) ถ้ามี call.DisplayMessage อยู่จริง พยายาม instantiate ด้วย signature ต่าง ๆ
+    2) ถ้าไม่สำเร็จ fallback เป็น DataTransfer (ใช้ positional args เพราะบางเวอร์ชันไม่รับ keyword)
+    """
     payload = {"message_type": message_type, "uri": uri}
     if hasattr(call, "DisplayMessage"):
         DisplayMessageCls = getattr(call, "DisplayMessage")
-        for attempt_kwargs in ("message", "payload", "content", "display"):
+        for attempt_kwargs in ({"message": payload}, {"payload": payload}, {"content": payload}, {"display": payload}):
             try:
-                return DisplayMessageCls(**{attempt_kwargs: payload})  # type: ignore
+                instance = DisplayMessageCls(**attempt_kwargs)  # type: ignore
+                logging.info(f"Instantiated call.DisplayMessage with args {attempt_kwargs}")
+                return instance
             except Exception:
                 continue
+        logging.warning("call.DisplayMessage exists but all instantiation attempts failed; falling back to DataTransfer.")
     try:
-        return call.DataTransfer("com.yourcompany.payment", "DisplayQRCode", json.dumps(payload))
+        return call.DataTransferPayload("com.yourcompany.payment", "DisplayQRCode", json.dumps(payload))
     except Exception as e:
         logging.error(f"Failed to build DataTransfer fallback: {e}")
         raise
 
 
 class CentralSystem(ChargePoint):
+    """
+    CSMS (Central) สำหรับ OCPP 1.6
+    """
+
+    # เก็บสถานะธุรกรรมต่อ connector เพื่อให้ทราบทั้ง transactionId และ idTag
+    # key: connector_id (int) -> value: {"transaction_id": int, "id_tag": str}
     def __init__(self, id, connection):
         super().__init__(id, connection)
         self.active_tx: Dict[int, Dict[str, Any]] = {}
+        # เก็บรายการ remote start ที่สั่งไว้ เพื่อใช้ตรวจสอบตอนรับ StartTransaction
         self.pending_remote: Dict[int, str] = {}
+        # เก็บข้อมูลเพิ่มเติมระหว่างรอ StartTransaction (เช่น vid)
         self.pending_start: Dict[int, Dict[str, Any]] = {}
+        # เก็บสถานะล่าสุดของแต่ละ connector
         self.connector_status: Dict[int, str] = {}
+        # เก็บ task watchdog สำหรับ connector ที่ยังไม่มี session
         self.no_session_tasks: Dict[int, asyncio.Task] = {}
-        self.completed_sessions: List[Dict[str, Any]] = []
 
+    # เมธอดสั่งเริ่มชาร์จ
     async def remote_start(self, connector_id: int, id_tag: str):
-        req = call.RemoteStartTransaction(
+        """
+        ส่ง RemoteStartTransaction ไปยัง charger นี้
+        """
+        req = call.RemoteStartTransactionPayload(
             id_tag=id_tag,
             connector_id=connector_id
         )
         logging.info(f"→ RemoteStartTransaction to {self.id} (connector={connector_id}, idTag={id_tag})")
         resp = await self.call(req)
+        logging.info(f"← RemoteStartTransaction.conf: {resp}")
         status = getattr(resp, "status", None)
         if status == RemoteStartStopStatus.accepted:
+            # จดจำว่า connector นี้มี remote start pending
             self.pending_remote[int(connector_id)] = id_tag
+            logging.info(
+                "RemoteStartTransaction accepted (chargerจะส่ง StartTransaction.req ตามมา)"
+            )
         else:
             logging.warning(f"RemoteStartTransaction rejected: {status}")
         return status
 
+    # เมธอดสั่งหยุดชาร์จ
     async def remote_stop(self, transaction_id: int):
-        req = call.RemoteStopTransaction(transaction_id=transaction_id)
+        """
+        ส่ง RemoteStopTransaction ด้วย transaction_id
+        """
+        req = call.RemoteStopTransactionPayload(transaction_id=transaction_id)
         logging.info(f"→ RemoteStopTransaction to {self.id} (tx={transaction_id})")
         resp = await self.call(req)
+        logging.info(f"← RemoteStopTransaction.conf: {resp}")
         status = getattr(resp, "status", None)
-        if status != RemoteStartStopStatus.accepted:
+        if status == RemoteStartStopStatus.accepted:
+            logging.info("RemoteStopTransaction accepted")
+        else:
             logging.warning(f"RemoteStopTransaction rejected: {status}")
         return status
 
     async def change_configuration(self, key: str, value: str):
-        req = call.ChangeConfiguration(key=key, value=value)
+        """ส่งคำสั่ง ChangeConfiguration ไปยัง charger"""
+        req = call.ChangeConfigurationPayload(key=key, value=value)
         logging.info(f"→ ChangeConfiguration to {self.id} ({key}={value})")
         resp = await self.call(req)
         logging.info(f"← ChangeConfiguration.conf: {resp}")
         return getattr(resp, "status", None)
 
     async def unlock_connector(self, connector_id: int):
-        req = call.UnlockConnector(connector_id=connector_id)
+        """ส่งคำสั่ง UnlockConnector ไปยัง charger"""
+        req = call.UnlockConnectorPayload(connector_id=connector_id)
         logging.info(f"→ UnlockConnector to {self.id} (connector={connector_id})")
         resp = await self.call(req)
         logging.info(f"← UnlockConnector.conf: {resp}")
         return getattr(resp, "status", None)
 
     async def _no_session_watchdog(self, connector_id: int, timeout: int = 90):
+        """
+        หากหัวรายงาน Preparing/Occupied แต่ยังไม่มีธุรกรรมภายใน timeout จะปลดล็อกสาย
+        """
         try:
             await asyncio.sleep(timeout)
             status = self.connector_status.get(connector_id)
@@ -113,19 +150,22 @@ class CentralSystem(ChargePoint):
         finally:
             self.no_session_tasks.pop(connector_id, None)
 
-    @on(Action.boot_notification)
+    @on(Action.BootNotification)
     async def on_boot_notification(self, charge_point_model, charge_point_vendor, **kwargs):
         logging.info(f"← BootNotification from vendor={charge_point_vendor}, model={charge_point_model}")
-        response = call_result.BootNotification(
+        response = call_result.BootNotificationPayload(
             current_time=datetime.utcnow().isoformat() + "Z",
             interval=300,
             status=RegistrationStatus.accepted
         )
 
+        # ดึง supported keys (optional)
         supported_keys: List[str] = []
         try:
-            conf_req = call.GetConfiguration()
+            conf_req = call.GetConfigurationPayload()
             conf_resp = await asyncio.wait_for(self.call(conf_req), timeout=10)
+            logging.info(f"→ GetConfiguration response: {conf_resp}")
+
             items: Any = []
             if hasattr(conf_resp, "configuration_key"):
                 items = getattr(conf_resp, "configuration_key")
@@ -140,23 +180,29 @@ class CentralSystem(ChargePoint):
                     key_name = getattr(entry, "key", None)
                 if key_name:
                     supported_keys.append(key_name)
+            logging.info(f"Supported configuration keys parsed: {supported_keys}")
         except asyncio.TimeoutError:
             logging.warning("Timeout fetching GetConfiguration; proceeding without supported keys.")
         except Exception as e:
             logging.warning(f"Failed to fetch supported configuration keys: {e}")
 
+        # เปิดให้ RemoteStartTransaction โดยไม่ต้อง Authorize ล่วงหน้า
         if "AuthorizeRemoteTxRequests" in supported_keys:
-            cfg_req = call.ChangeConfiguration(
+            logging.info("Enabling remote start without prior Authorize")
+            cfg_req = call.ChangeConfigurationPayload(
                 key="AuthorizeRemoteTxRequests", value="true"
             )
             asyncio.create_task(self._send_change_configuration(cfg_req))
 
+        # ตัวอย่างส่ง QR แสดงผล (optional)
         qr_url = "https://your-domain.com/qr?order_id=TEST123"
         target_key = "QRcodeConnectorID1"
         if target_key in supported_keys:
-            change_req = call.ChangeConfiguration(key=target_key, value=qr_url)
+            logging.info(f"Using supported key '{target_key}' to send ChangeConfiguration for QR")
+            change_req = call.ChangeConfigurationPayload(key=target_key, value=qr_url)
             asyncio.create_task(self._send_change_configuration(change_req))
         else:
+            logging.info(f"Key '{target_key}' not supported; attempting fallback display (DisplayMessage/DataTransfer) for QR")
             try:
                 fallback = make_display_message_call(message_type="QRCode", uri=qr_url)
                 asyncio.create_task(self._send_change_configuration(fallback))
@@ -172,18 +218,19 @@ class CentralSystem(ChargePoint):
         except Exception as e:
             logging.error(f"!!! ChangeConfiguration/custom failed: {e}")
 
-    @on(Action.authorize)
+    @on(Action.Authorize)
     async def on_authorize(self, id_tag, **kwargs):
         logging.info(f"← Authorize request, idTag={id_tag}")
-        return call_result.Authorize(id_tag_info={"status": AuthorizationStatus.accepted})
+        return call_result.AuthorizePayload(id_tag_info={"status": AuthorizationStatus.accepted})
 
-    @on(Action.status_notification)
+    @on(Action.StatusNotification)
     async def on_status_notification(self, connector_id, error_code, status, **kwargs):
         logging.info(
             f"← StatusNotification: connector {connector_id} → status={status}, errorCode={error_code}"
         )
         c_id = int(connector_id)
         self.connector_status[c_id] = status
+        # จับเวลาเมื่อหัวอยู่ในสถานะ Preparing/Occupied แต่ยังไม่มีธุรกรรม
         if status in ("Preparing", "Occupied"):
             if c_id not in self.active_tx and c_id not in self.no_session_tasks:
                 self.no_session_tasks[c_id] = asyncio.create_task(
@@ -193,35 +240,29 @@ class CentralSystem(ChargePoint):
             task = self.no_session_tasks.pop(c_id, None)
             if task:
                 task.cancel()
-        return call_result.StatusNotification()
+        return call_result.StatusNotificationPayload()
 
-    @on(Action.heartbeat)
+    @on(Action.Heartbeat)
     def on_heartbeat(self, **kwargs):
         logging.info("← Heartbeat received")
-        return call_result.Heartbeat(current_time=datetime.utcnow().isoformat() + "Z")
+        return call_result.HeartbeatPayload(current_time=datetime.utcnow().isoformat() + "Z")
 
-    @on(Action.meter_values)
+    @on(Action.MeterValues)
     async def on_meter_values(self, connector_id, meter_value, **kwargs):
         logging.info(f"← MeterValues from connector {connector_id}: {meter_value}")
-        return call_result.MeterValues()
+        return call_result.MeterValuesPayload()
 
-    @on(Action.data_transfer)
+    @on(Action.DataTransfer)
     async def on_data_transfer(self, vendor_id, message_id=None, data=None, **kwargs):
+        """Handle custom DataTransfer messages from the charger."""
         logging.info(
             f"← DataTransfer: vendorId={vendor_id}, messageId={message_id}, data={data}"
         )
-        return call_result.DataTransfer(status=DataTransferStatus.accepted)
+        return call_result.DataTransferPayload(status=DataTransferStatus.accepted)
 
-    @on(Action.start_transaction)
-    async def on_start_transaction(
-        self,
-        connector_id,
-        id_tag,
-        meter_start,
-        timestamp,
-        reservation_id=None,
-        **kwargs,
-    ):
+    # ดักรับ StartTransaction เพื่อ “ออกเลข” และจดจำ transaction
+    @on(Action.StartTransaction)
+    async def on_start_transaction(self, connector_id, id_tag, meter_start, timestamp, reservation_id=None, **kwargs):
         expected = self.pending_remote.get(int(connector_id))
         if expected is not None and expected != id_tag:
             logging.warning(
@@ -230,24 +271,26 @@ class CentralSystem(ChargePoint):
             await self.unlock_connector(int(connector_id))
             self.pending_remote.pop(int(connector_id), None)
             self.pending_start.pop(int(connector_id), None)
-            return call_result.StartTransaction(
+            return call_result.StartTransactionPayload(
                 transaction_id=0,
                 id_tag_info={"status": AuthorizationStatus.invalid},
             )
 
+        # ถ้ามี remote start pending ให้ลบ flag ทิ้ง
         pending = self.pending_start.pop(int(connector_id), None)
         self.pending_remote.pop(int(connector_id), None)
 
-        tx_id = next(_tx_counter)
+        # ไม่บังคับว่าต้องมี pending start เสมอ: รองรับ local start หรือ remote start ที่ไม่ได้ผ่าน API
+        tx_id = next(_tx_counter)  # CSMS ออกเลข transactionId
         info = {
             "transaction_id": tx_id,
             "id_tag": id_tag,
-            "meter_start": meter_start,
-            "start_time": _parse_timestamp(timestamp),
         }
         if pending and "vid" in pending:
             info["vid"] = pending["vid"]
+        # เก็บทั้ง transactionId และข้อมูลอื่นเพื่อให้ API ภายนอกเรียกดูได้
         self.active_tx[int(connector_id)] = info
+        # ยกเลิก watchdog ถ้ามี
         task = self.no_session_tasks.pop(int(connector_id), None)
         if task:
             task.cancel()
@@ -255,51 +298,33 @@ class CentralSystem(ChargePoint):
             f"← StartTransaction from {self.id}: connector={connector_id}, idTag={id_tag}, meterStart={meter_start}, vid={info.get('vid')}"
         )
         logging.info(f"→ Assign transactionId={tx_id}")
-        return call_result.StartTransaction(
+        return call_result.StartTransactionPayload(
             transaction_id=tx_id,
             id_tag_info={"status": AuthorizationStatus.accepted},
         )
 
-    @on(Action.stop_transaction)
+
+# ดักรับ StopTransaction เพื่อเคลียร์สถานะ
+    @on(Action.StopTransaction)
     async def on_stop_transaction(self, transaction_id, meter_stop, timestamp, **kwargs):
-        session_info = None
-        c_id = None
-        for conn_id, info in list(self.active_tx.items()):
+        for c_id, info in list(self.active_tx.items()):
             if info.get("transaction_id") == int(transaction_id):
-                session_info = info
-                c_id = conn_id
-                self.active_tx.pop(conn_id, None)
+                self.active_tx.pop(c_id, None)
                 break
         logging.info(f"← StopTransaction from {self.id}: tx={transaction_id}, meterStop={meter_stop}")
-        if session_info:
-            start_time = session_info.get("start_time")
-            stop_time = _parse_timestamp(timestamp)
-            duration_secs = (stop_time - start_time).total_seconds() if start_time else 0
-            meter_start = session_info.get("meter_start", meter_stop)
-            energy = meter_stop - meter_start
-            record = {
-                "connectorId": c_id,
-                "transactionId": int(transaction_id),
-                "idTag": session_info.get("id_tag", ""),
-                "meterStart": meter_start,
-                "meterStop": meter_stop,
-                "energy": energy,
-                "startTime": start_time.isoformat() if start_time else None,
-                "stopTime": stop_time.isoformat(),
-                "durationSecs": duration_secs,
-            }
-            self.completed_sessions.append(record)
-            logging.info(f"Session summary: {record}")
-        return call_result.StopTransactionPayload(
-            id_tag_info={"status": AuthorizationStatus.accepted}
-        )
+        resp_cls = getattr(call_result, "StopTransaction", None)
+        if resp_cls is None:
+            resp_cls = getattr(call_result, "StopTransactionPayload")
+        return resp_cls(id_tag_info={"status": AuthorizationStatus.accepted})
 
 
+# ================================
+#        HTTP CONTROL API
+# ================================
 DEFAULT_ID_TAG = "DEMO_IDTAG"
-API_KEY = "changeme-123"
+API_KEY = "changeme-123"  # replace with your own secret
 
 app = FastAPI(title="OCPP Central Control API", version="1.0.0")
-
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -315,8 +340,8 @@ async def log_requests(request: Request, call_next):
 
 @app.get("/api/v1/health")
 def health():
+    """Basic health check endpoint."""
     return {"ok": True, "time": datetime.utcnow().isoformat() + "Z"}
-
 
 class StartReq(BaseModel):
     cpid: str
@@ -331,7 +356,6 @@ class StartReq(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-
 class StopReq(BaseModel):
     cpid: str
     transactionId: int | None = None
@@ -343,16 +367,13 @@ class StopReq(BaseModel):
     kvMap: Dict[str, str] | None = None
     hash: str | None = None
 
-
 class StopByConnectorReq(BaseModel):
     cpid: str
     connectorId: int
 
-
 class ReleaseReq(BaseModel):
     cpid: str
     connectorId: int
-
 
 class ActiveSession(BaseModel):
     cpid: str
@@ -361,31 +382,9 @@ class ActiveSession(BaseModel):
     transactionId: int
 
 
-class CompletedSession(BaseModel):
-    """Summary of a finished charging transaction."""
-
-    cpid: str
-    connectorId: int
-    idTag: str
-    transactionId: int
-    meterStart: int
-    meterStop: int
-    energy: int
-    startTime: str
-    stopTime: str
-    durationSecs: float
-
-
-class ConnectorStatus(BaseModel):
-    cpid: str
-    connectorId: int
-    status: str
-
-
 def require_key(x_api_key: str | None):
     if API_KEY and x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="invalid api key")
-
 
 @app.post("/api/v1/start")
 async def api_start(req: StartReq):
@@ -404,7 +403,6 @@ async def api_start(req: StartReq):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.post("/api/v1/stop")
 async def api_stop(req: StopReq):
@@ -434,7 +432,6 @@ async def api_stop(req: StopReq):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.post("/charge/stop")
 async def api_stop_by_connector(req: StopByConnectorReq):
     cp = connected_cps.get(req.cpid)
@@ -457,6 +454,7 @@ async def api_stop_by_connector(req: StopByConnectorReq):
 
 @app.post("/api/v1/release")
 async def api_release(req: ReleaseReq):
+    """ปลดล็อกสายเมื่อยังไม่มีธุรกรรม"""
     cp = connected_cps.get(req.cpid)
     if not cp:
         raise HTTPException(status_code=404, detail=f"ChargePoint '{req.cpid}' not connected")
@@ -478,6 +476,7 @@ async def api_release(req: ReleaseReq):
 
 @app.get("/api/v1/active")
 async def api_active_sessions():
+    """คืนรายการธุรกรรมที่กำลังชาร์จอยู่ทั้งหมด."""
     sessions: list[ActiveSession] = []
     for cpid, cp in connected_cps.items():
         for conn_id, info in cp.active_tx.items():
@@ -492,31 +491,24 @@ async def api_active_sessions():
     return {"sessions": [s.dict() for s in sessions]}
 
 
-@app.get("/api/v1/history")
-async def api_session_history():
-    sessions: list[CompletedSession] = []
-    for cpid, cp in connected_cps.items():
-        for record in cp.completed_sessions:
-            sessions.append(CompletedSession(cpid=cpid, **record))
-    return {"sessions": [s.dict() for s in sessions]}
-
-
-@app.get("/api/v1/status")
-async def api_connector_status():
-    statuses: list[ConnectorStatus] = []
-    for cpid, cp in connected_cps.items():
-        for conn_id, status in cp.connector_status.items():
-            statuses.append(ConnectorStatus(cpid=cpid, connectorId=conn_id, status=status))
-    return {"connectors": [s.dict() for s in statuses]}
-
-
+# ================================
+#    RUN OCPP WS + HTTP API
+# ================================
 async def run_http_api():
+    """
+    รัน FastAPI ด้วย uvicorn ภายใน event loop เดียวกัน
+    """
     config = uvicorn.Config(app, host="0.0.0.0", port=8080, loop="asyncio", log_level="info")
     server = uvicorn.Server(config)
     await server.serve()
 
 
 async def main():
+    """
+    สร้าง WebSocket server รอฟังการเชื่อมต่อจาก Charger
+    (Charger connect ด้วย ws://<host>:9000/ocpp/<ChargePointID>)
+    พร้อมกันกับ HTTP API บน :8080
+    """
     async def handler(websocket, path=None):
         if path is None:
             try:
@@ -534,7 +526,16 @@ async def main():
             connected_cps.pop(cp_id, None)
             logging.info(f"[Central] Disconnected: {cp_id}")
 
+    # คอนโซลคำสั่งแบบง่าย ๆ ใน thread แยก (ใช้ควบคู่กับ REST ก็ได้)
     def console_thread(loop: asyncio.AbstractEventLoop):
+        """
+        คำสั่ง:
+          start <cpid> <connector> <idTag>
+          stop  <cpid> <connector|txId>
+          config <cpid> <key> <value>
+          ls
+          map <cpid>
+        """
         while True:
             try:
                 cmd = input().strip()
@@ -595,6 +596,7 @@ async def main():
     loop = asyncio.get_running_loop()
     threading.Thread(target=console_thread, args=(loop,), daemon=True).start()
 
+    # สตาร์ท HTTP API ควบคู่กัน
     api_task = asyncio.create_task(run_http_api())
 
     async with serve(
@@ -604,8 +606,7 @@ async def main():
         subprotocols=['ocpp1.6']
     ):
         logging.info("⚡ Central listening on ws://0.0.0.0:9000/ocpp/<ChargePointID> | HTTP :8080")
-        await asyncio.Future()
-
+        await asyncio.Future()  # keep running
 
 if __name__ == "__main__":
     asyncio.run(main())
