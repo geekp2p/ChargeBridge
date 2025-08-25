@@ -1,97 +1,70 @@
-python -m compileall -q .
+cd Y:\emulator\p2p-mesh\relay
+go mod init p2p-mesh/relay
+go mod tidy
 
 
-curl -X POST http://localhost:7071/plug/1
+cd Y:\emulator\p2p-mesh\node
+go mod init p2p-mesh/node
+go mod tidy
 
 
-curl -X POST http://localhost:8080/api/v1/start -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":1,\"id_tag\":\"VID:FCA47A147858\"}"
 
-curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/active
+docker compose build --no-cache
 
-curl -X POST http://localhost:8080/api/v1/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"transactionId\":1}"
+docker compose down -v
 
-curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/active
+docker compose --env-file .env up
 
-curl -X POST http://localhost:7071/unplug/1
+go build ./...
 
-:: ตรวจสอบ health
-curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/health
+docker compose logs relay | grep -E "Relay PeerID|Listen:"
+# Windows PowerShell:
+# docker compose logs relay | Select-String -Pattern "Relay PeerID|Listen:"
 
-:: หยุดการชาร์จโดยระบุ connectorId โดยตรง
-curl -X POST http://localhost:8080/charge/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":1}"
+1) รันรีเลย์ (บนเครื่องมี IP สาธารณะ หรือเครื่องทดสอบ)
+cd relay
+go mod tidy
+go build -o p2p-relay .
+# ตั้งค่าตามต้องการ
+set RELAY_LISTEN=/ip4/0.0.0.0/tcp/4003        # Windows CMD
+# PowerShell: $env:RELAY_LISTEN="/ip4/0.0.0.0/tcp/4003"
+./p2p-relay
 
-:: ปลดล็อกหัวชาร์จ
-curl -X POST http://localhost:8080/api/v1/release -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":1}"
+2) รันโหนด
 
-| Method | URL               | การใช้งาน                                                                        |
-| ------ | ----------------- | -------------------------------------------------------------------------------- |
-| `GET`  | `/api/v1/health`  | ตรวจสอบสถานะของเซิร์ฟเวอร์และเวลาปัจจุบัน\:codex-file-citation                   |
-| `POST` | `/api/v1/start`   | เริ่มการชาร์จ (ต้องมีข้อมูล `cpid`, `connectorId`, `idTag`)\:codex-file-citation |
-| `POST` | `/api/v1/stop`    | หยุดการชาร์จผ่าน `transactionId` หรือ `connectorId`:codex-file-citation          |
-| `POST` | `/charge/stop`    | หยุดการชาร์จโดยระบุ `connectorId` โดยตรง\:codex-file-citation                    |
-| `POST` | `/api/v1/release` | ปลดล็อกหัวชาร์จ (หากไม่มีธุรกรรมกำลังใช้งาน)\:codex-file-citation                |
-| `GET`  | `/api/v1/active`  | ตรวจสอบรายการ session ที่กำลังใช้งานอยู่ทั้งหมด\:codex-file-citation             |
+เปิดเทอร์มินัลใหม่
 
-:: ===========================
-:: Connector 1
-:: ===========================
+cd node
+go mod tidy
+go build -o p2p-node .
 
-:: Plug connector 1
-curl -X POST http://localhost:7071/plug/1
+ตัวอย่าง: รัน node1
+# Windows CMD
+set APP_ROOM=my-room
+set LISTEN_TCP=/ip4/0.0.0.0/tcp/4001
+set LISTEN_QUIC=/ip4/0.0.0.0/udp/4001/quic-v1
+set ENABLE_RELAY_CLIENT=true
+set ENABLE_HOLEPUNCH=true
+set ENABLE_UPNP=true
+set RELAY_ADDR=/ip4/<PUBLIC_IP_OR_DNS>/tcp/4003/p2p/<RELAY_PEER_ID>
+.\p2p-node
 
-:: Start charging connector 1
-curl -X POST http://localhost:8080/api/v1/start -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":1,\"id_tag\":\"VID:FCA47A147858\"}"
-
-:: Check active sessions
-curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/active
-
-:: Stop charging connector 1 by transactionId
-curl -X POST http://localhost:8080/api/v1/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"transactionId\":1}"
-
-:: Check active sessions again
-curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/active
-
-:: Unplug connector 1
-curl -X POST http://localhost:7071/unplug/1
-
-:: Health check
-curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/health
-
-:: Stop charging connector 1 (direct by connectorId)
-curl -X POST http://localhost:8080/charge/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":1}"
-
-:: Release connector 1
-curl -X POST http://localhost:8080/api/v1/release -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":1}"
+ตัวอย่าง: รัน node2 (เครื่องเดียวกันหรืออีกเครื่อง)
+# Windows CMD
+set APP_ROOM=my-room
+set LISTEN_TCP=/ip4/0.0.0.0/tcp/4002
+set LISTEN_QUIC=/ip4/0.0.0.0/udp/4002/quic-v1
+set ENABLE_RELAY_CLIENT=true
+set ENABLE_HOLEPUNCH=true
+set ENABLE_UPNP=true
+set RELAY_ADDR=/ip4/<PUBLIC_IP_OR_DNS>/tcp/4003/p2p/<RELAY_PEER_ID>
+.\p2p-node
 
 
-:: ===========================
-:: Connector 2
-:: ===========================
+dism /Online /Enable-Feature /FeatureName:Microsoft-Hyper-V /All /NoRestart
+Set-VMProcessor -VMName <ชื่อ VM> -ExposeVirtualizationExtensions $true
 
-:: Plug connector 2
-curl -X POST http://localhost:7071/plug/2
+✅ cd node && go test ./...
 
-:: Start charging connector 2
-curl -X POST http://localhost:8080/api/v1/start -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":2,\"id_tag\":\"VID:FCA47A147858\"}"
-
-:: Check active sessions
-curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/active
-
-:: Stop charging connector 2 by transactionId
-curl -X POST http://localhost:8080/api/v1/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"transactionId\":2}"
-
-:: Check active sessions again
-curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/active
-
-:: Unplug connector 2
-curl -X POST http://localhost:7071/unplug/2
-
-:: Health check
-curl -H "X-API-Key: changeme-123" http://localhost:8080/api/v1/health
-
-:: Stop charging connector 2 (direct by connectorId)
-curl -X POST http://localhost:8080/charge/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":2}"
-
-:: Release connector 2
-curl -X POST http://localhost:8080/api/v1/release -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":2}"
+✅ cd ../relay && go test ./...
 
