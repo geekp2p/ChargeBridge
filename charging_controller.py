@@ -15,7 +15,7 @@ from ocpp_client import OCPPClient
 async def run_demo() -> None:
     """Demonstrate starting and stopping a charging session."""
     client = OCPPClient(
-        "ws://localhost:9000/ocpp/CP_1",
+        "ws://45.136.236.186:9000/ocpp/CP_1",
         "CP_1",
         ocpp_protocol="ocpp1.6",
         charger_model="Gresgying 120-180 kW DC",
