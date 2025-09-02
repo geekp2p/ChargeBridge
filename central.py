@@ -59,6 +59,7 @@ class CentralSystem(ChargePoint):
         self.connector_status: Dict[int, str] = {}
         self.no_session_tasks: Dict[int, asyncio.Task] = {}
         self.completed_sessions: List[Dict[str, Any]] = []
+        self.last_heartbeat: datetime | None = None
 
     async def remote_start(self, connector_id: int, id_tag: str):
         req = call.RemoteStartTransaction(
@@ -198,7 +199,8 @@ class CentralSystem(ChargePoint):
     @on(Action.heartbeat)
     def on_heartbeat(self, **kwargs):
         logging.info("← Heartbeat received")
-        return call_result.Heartbeat(current_time=datetime.utcnow().isoformat() + "Z")
+        self.last_heartbeat = datetime.utcnow()
+        return call_result.Heartbeat(current_time=self.last_heartbeat.isoformat() + "Z")
 
     @on(Action.meter_values)
     async def on_meter_values(self, connector_id, meter_value, **kwargs):
