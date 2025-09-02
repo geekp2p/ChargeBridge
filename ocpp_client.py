@@ -2,8 +2,12 @@ import asyncio
 import json
 import uuid
 from datetime import datetime
+import logging
+import csv
 
 import websockets
+
+logger = logging.getLogger(__name__)
 
 
 class OCPPClient:
@@ -185,6 +189,39 @@ class OCPPClient:
         }
         resp = await self._call("MeterValues", payload)
         return resp
+
+    async def data_transfer(
+        self, vendor_id: str, message_id: str, data: dict | str
+    ) -> dict:
+        payload = {
+            "vendorId": vendor_id,
+            "messageId": message_id,
+            "data": json.dumps(data),
+        }
+        logger.debug("DataTransfer request: %s", payload)
+        resp = await self._call("DataTransfer", payload)
+        logger.debug("DataTransfer response: %s", resp)
+        return resp
+
+    async def send_csv_log(self, csv_path: str) -> dict:
+        def sanitize(value: object) -> str:
+            return str(value).strip()
+
+        records = []
+        with open(csv_path, encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                records.append(
+                    {
+                        "timestamp": sanitize(row.get("Timestamp", "")),
+                        "sender": sanitize(row.get("sender", "")),
+                        "title": sanitize(row.get("Title", "")),
+                        "detail": sanitize(row.get("Detail", "")),
+                    }
+                )
+        return await self.data_transfer(
+            "com.yourco.logs", "CsvLog", records
+        )
 
     async def on_remotestarttransaction(self, payload: dict) -> dict:
         """Handle a RemoteStartTransaction request by starting a transaction."""
