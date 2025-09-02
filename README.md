@@ -16,9 +16,21 @@ The `OCPPClient` and its helper scripts are intended for local testing and
 demonstrations. When connecting real charging stations directly to the
 central system, these client-side files can be removed.
 
-The `OCPPClient` and its helper scripts are intended for local testing and
-demonstrations. When connecting real charging stations directly to the
-central system, these client-side files can be removed.
+## Feature Status
+
+| Feature                                   | Central (Server) | OCPP Client | How to view |
+| ----------------------------------------- | :--------------: | :---------: | ----------- |
+| BootNotification & Heartbeat              |        ✅        |     ✅      | check `central.py` logs after the client connects |
+| Authorize                                 |        ✅        |     ✅      | start a session; central logs show `Authorize` before `StartTransaction` |
+| MeterValues                               | ✅ (log only)    |     ❌      | not emitted by the client |
+| DataTransfer                              |        ✅        |     ❌      | not supported yet |
+| Session data (sensor expansion)           |        ❌        |     ❌      | – |
+| RemoteStart/RemoteStop                    |        ✅        |     ❌      | use `/api/v1/start` and `/api/v1/stop`; client can't handle OCPP `RemoteStartTransaction` |
+| StatusNotification                        |        ✅        |     ✅      | central logs show `Available → Charging → Finishing` transitions |
+| Change/Get Configuration & TriggerMessage | ✅ (no TriggerMessage) | ❌ | – |
+| UpdateFirmware                            |        ❌        |     ❌      | – |
+| Reset (Hard/Soft)                         |        ❌        |     ❌      | – |
+
 
 ## Conda Installation
 
@@ -39,11 +51,10 @@ Run the demo orchestrator after the environment is prepared:
 python charging_controller.py
 ```
 
-4. Observe the logs from both the client and `central.py`. A
-   `BootNotification` is sent immediately after the WebSocket connection is
-   established. The central system replies with an interval (default 300 s)
-   and the client schedules a periodic `Heartbeat` task. You should see log
-   entries similar to:
+4. Observe the logs from both the client and `central.py`. On connection the
+   client sends a `BootNotification` and schedules periodic `Heartbeat`
+   messages. When a session starts you will also see `Authorize` and
+   `StatusNotification` records. Example output:
 
    ```
    ← BootNotification from vendor=Unknown, model=Gresgying 120-180 kW DC
@@ -78,19 +89,21 @@ client = OCPPClient(
 python charging_controller.py
 ```
 
-4. Observe the logs from both the client and `central.py`. A
-   `BootNotification` is sent immediately after the WebSocket connection is
-   established. The central system replies with an interval (default 300 s)
-   and the client schedules a periodic `Heartbeat` task. You should see log
-   entries similar to:
+4. Observe the logs from both the client and `central.py`. On connection the
+   client sends a `BootNotification` and periodic `Heartbeat` messages. After
+   invoking `/api/v1/start`, the logs also include `Authorize` and
+   `StatusNotification` entries:
 
    ```
    ← BootNotification from vendor=Unknown, model=Gresgying 120-180 kW DC
    ← Heartbeat received
+   ← Authorize idTag=VID:FCA47A147858 status=Accepted
+   ← StatusNotification connectorId=1 status=Charging
    ```
 
-   The heartbeat message repeats roughly every 300 seconds unless the server
-   specifies a different interval.
+   Heartbeat messages repeat roughly every 300 seconds unless the server
+   specifies a different interval. When stopping a session you'll see
+   `StatusNotification` updates to `Finishing` and `Available`.
 
 ## Testing with a Remote Server
 
@@ -213,8 +226,6 @@ Lists each connector with its current OCPP status.
 - เริ่มชาร์จ (remote start)
 - หยุดชาร์จ (remote stop)
 - ถอดสาย (unplug)
-
-Status can be monitored throughout via the CSMS.
 
 Status can be monitored throughout via the CSMS.
 

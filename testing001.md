@@ -62,3 +62,4 @@ python -m py_compile ocpp_client.py central.py
 
 
 
+python -m py_compile ocpp_client.py central.py
