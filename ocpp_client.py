@@ -128,9 +128,37 @@ class OCPPClient:
         except asyncio.CancelledError:
             pass
 
+    async def authorize(self, id_tag: str) -> dict:
+        """Send an Authorize request for the given idTag."""
+        payload = {"idTag": id_tag}
+        return await self._call("Authorize", payload)
+
+    async def status_notification(
+        self,
+        connector_id: int,
+        status: str,
+        error_code: str = "NoError",
+    ) -> dict:
+        """Notify the central system about connector status changes."""
+        payload = {
+            "connectorId": connector_id,
+            "status": status,
+            "errorCode": error_code,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+        return await self._call("StatusNotification", payload)
+
     async def start_transaction(
         self, connector_id: int, id_tag: str, meter_start: int
     ) -> dict:
+        try:
+            auth = await self.authorize(id_tag)
+            status = auth.get("idTagInfo", {}).get("status")
+            if status and status != "Accepted":
+                return auth
+        except Exception:
+            logger.warning("Authorize failed; proceeding with StartTransaction")
+
         payload = {
             "connectorId": connector_id,
             "idTag": id_tag,
@@ -146,6 +174,10 @@ class OCPPClient:
                 "connector_id": connector_id,
             }
             self._last_meter = meter_start
+            try:
+                await self.status_notification(connector_id, "Charging")
+            except Exception:
+                logger.debug("StatusNotification failed", exc_info=True)
         return resp
 
     async def stop_transaction(
@@ -163,9 +195,19 @@ class OCPPClient:
         }
         if reason:
             payload["reason"] = reason
+        try:
+            connector_id = self._active_tx.get("connector_id", 1) if self._active_tx else 1
+            await self.status_notification(connector_id, "Finishing")
+        except Exception:
+            logger.debug("StatusNotification failed", exc_info=True)
         resp = await self._call("StopTransaction", payload)
         if self._active_tx and self._active_tx.get("id") == transaction_id:
             self._active_tx = None
+            try:
+                connector_id = connector_id
+                await self.status_notification(connector_id, "Available")
+            except Exception:
+                logger.debug("StatusNotification failed", exc_info=True)
         return resp
 
     async def send_meter_values(

@@ -46,4 +46,19 @@ Heartbeat received at 2024-xx-xx HH:MM:SS
 python -m py_compile ocpp_client.py central.py
 
 
+| ฟีเจอร์                                       |          Central (Server)         | OCPP Client | สิ่งที่ยังขาดหรือควรปรับปรุง                                     |
+| --------------------------------------------- | :-------------------------------: | :---------: | ---------------------------------------------------------------- |
+| **BootNotification & Heartbeat**              |                 ✅                 |      ❌      | Client ยังไม่ส่ง BootNotification/Heartbeat                      |
+| **Authorize**                                 |                 ✅                 |      ❌      | Client ยังไม่เรียก `Authorize` ก่อนเริ่มธุรกรรม                  |
+| **MeterValues**                               |            ✅ (แค่ log)            |      ❌      | ไม่ได้ส่งค่าไฟฟ้า (กระแส/แรงดัน/SoC ฯลฯ) จาก Client              |
+| **DataTransfer**                              |                 ✅                 |      ❌      | Client ยังไม่รองรับ DataTransfer                                 |
+| **Session data เก็บ sensor เพิ่มเติม**        |                 ❌                 |      ❌      | โครงสร้าง Session ยังเก็บเฉพาะ meterStart/meterStop              |
+| **RemoteStart/RemoteStop**                    |                 ✅                 |      ❌      | Client ยังไม่รองรับคำสั่งระยะไกล                                 |
+| **StatusNotification**                        |                 ✅                 |      ❌      | Client ยังไม่แจ้งสถานะ Available/Charging/Finishing              |
+| **Change/Get Configuration & TriggerMessage** | ✅ *(ยังไม่รองรับ TriggerMessage)* |      ❌      | TriggerMessage ไม่พร้อม และ Client ยังไม่รองรับการเปลี่ยน config |
+| **UpdateFirmware**                            |                 ❌                 |      ❌      | ทั้งคู่ยังไม่มีการจัดการอัปเดตเฟิร์มแวร์                         |
+| **Reset (Hard/Soft)**                         |                 ❌                 |      ❌      | ยังไม่รองรับคำสั่ง Reset                                         |
+
+
+
 
