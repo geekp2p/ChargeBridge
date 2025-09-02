@@ -187,10 +187,11 @@ class OCPPClient:
         return resp
 
     async def on_reset(self, payload: dict) -> dict:
-        """Handle a Reset request and stop active transactions."""
+        """Handle a Reset request and simulate the reset process."""
         reset_type = payload.get("type")
         if reset_type not in ("Hard", "Soft"):
             return {"status": "Rejected"}
+
         reason = "HardReset" if reset_type == "Hard" else "SoftReset"
         if self._active_tx:
             await self.stop_transaction(
@@ -199,4 +200,21 @@ class OCPPClient:
                 self._last_meter,
                 reason=reason,
             )
+
+        asyncio.create_task(self._perform_reset(reset_type))
         return {"status": "Accepted"}
+
+    async def _perform_reset(self, reset_type: str) -> None:
+        """Simulate a hard or soft reset of the client."""
+        await asyncio.sleep(1)
+        print(f"Simulating {reset_type} reset")
+        if reset_type == "Hard":
+            await self.close()
+            await asyncio.sleep(1)
+            await self.connect()
+        else:
+            if self._heartbeat_task:
+                self._heartbeat_task.cancel()
+                self._heartbeat_task = None
+            self._active_tx = None
+            await self.boot_notification()

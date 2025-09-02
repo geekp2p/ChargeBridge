@@ -39,3 +39,8 @@ Heartbeat received at 2024-xx-xx HH:MM:SS
 | Change/Get Configuration & TriggerMessage | ✅ (ยังไม่รองรับ TriggerMessage) |      ❌      | Client ไม่รองรับ และ TriggerMessage ยังขาด      |
 | UpdateFirmware                            |                ❌                |      ❌      | ยังไม่มีการจัดการอัปเดตเฟิร์มแวร์               |
 | Reset (Hard/Soft)                         |                ❌                |      ❌      | ยังไม่รองรับคำสั่งรีเซ็ต                        |
+
+
+✅ python -m py_compile ocpp_client.py
+
+
