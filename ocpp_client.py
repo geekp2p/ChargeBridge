@@ -27,12 +27,17 @@ class OCPPClient:
         self.ocpp_protocol = ocpp_protocol
         self.charger_model = charger_model
         self._ws: websockets.WebSocketClientProtocol | None = None
+        self._heartbeat_task: asyncio.Task | None = None
 
     async def connect(self) -> None:
-        """Establish a WebSocket connection using the configured subprotocol."""
+        """Establish a WebSocket connection and announce the charge point."""
         self._ws = await websockets.connect(self.uri, subprotocols=[self.ocpp_protocol])
+        await self.boot_notification()
 
     async def close(self) -> None:
+        if self._heartbeat_task:
+            self._heartbeat_task.cancel()
+            self._heartbeat_task = None
         if self._ws is not None:
             await self._ws.close()
             self._ws = None
@@ -50,6 +55,26 @@ class OCPPClient:
         response = json.loads(raw_response)
         # OCPP result frames are of the form [3, message_id, payload]
         return response[2]
+
+    async def boot_notification(self) -> None:
+        """Send a BootNotification and schedule periodic heartbeats."""
+        payload = {
+            "chargePointModel": self.charger_model,
+            "chargePointVendor": "Unknown"
+        }
+        resp = await self._call("BootNotification", payload)
+        interval = int(resp.get("interval", 0)) or 60
+        if self._heartbeat_task:
+            self._heartbeat_task.cancel()
+        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop(interval))
+
+    async def _heartbeat_loop(self, interval: int) -> None:
+        try:
+            while True:
+                await asyncio.sleep(interval)
+                await self._call("Heartbeat", {})
+        except asyncio.CancelledError:
+            pass
 
     async def start_transaction(
         self, connector_id: int, id_tag: str, meter_start: int
