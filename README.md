@@ -215,3 +215,65 @@ Lists each connector with its current OCPP status.
 - ถอดสาย (unplug)
 
 Status can be monitored throughout via the CSMS.
+
+Status can be monitored throughout via the CSMS.
+
+## End-to-End Remote Test Scenarios
+
+The following sequences exercise the CSMS using one-line `curl` commands. Replace
+`45.136.236.186` with your server's hostname and adjust `transactionId` values to
+match those returned by `/api/v1/active`.
+
+### Event 1 – Vehicle 1 on Connector 1
+
+```bash
+curl -X POST http://45.136.236.186:7071/plug/1
+curl -X POST http://45.136.236.186:8080/api/v1/start -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":1,\"id_tag\":\"VID:FCA47A147858\"}"
+curl -H "X-API-Key: changeme-123" http://45.136.236.186:8080/api/v1/active
+curl -X POST http://45.136.236.186:8080/api/v1/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"transactionId\":1}"
+curl -H "X-API-Key: changeme-123" http://45.136.236.186:8080/api/v1/active
+curl -H "X-API-Key: changeme-123" http://45.136.236.186:8080/api/v1/history
+curl -X POST http://45.136.236.186:8080/charge/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":1}"
+curl -X POST http://45.136.236.186:8080/api/v1/release -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":1}"
+curl -X POST http://45.136.236.186:7071/unplug/1
+curl -H "X-API-Key: changeme-123" http://45.136.236.186:8080/api/v1/health
+```
+
+### Event 2 – Vehicle 2 on Connector 2
+
+```bash
+curl -X POST http://45.136.236.186:7071/plug/2
+curl -X POST http://45.136.236.186:8080/api/v1/start -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":2,\"id_tag\":\"VID:FCA47A147859\"}"
+curl -H "X-API-Key: changeme-123" http://45.136.236.186:8080/api/v1/active
+curl -X POST http://45.136.236.186:8080/api/v1/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"transactionId\":2}"
+curl -H "X-API-Key: changeme-123" http://45.136.236.186:8080/api/v1/active
+curl -H "X-API-Key: changeme-123" http://45.136.236.186:8080/api/v1/history
+curl -X POST http://45.136.236.186:8080/charge/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":2}"
+curl -X POST http://45.136.236.186:8080/api/v1/release -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":2}"
+curl -X POST http://45.136.236.186:7071/unplug/2
+curl -H "X-API-Key: changeme-123" http://45.136.236.186:8080/api/v1/health
+```
+
+### Event 3 – Vehicles 3 & 4 on Connectors 1 and 2
+
+```bash
+curl -X POST http://45.136.236.186:7071/plug/1
+curl -X POST http://45.136.236.186:7071/plug/2
+curl -X POST http://45.136.236.186:8080/api/v1/start -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":1,\"id_tag\":\"VID:FCA47A147860\"}"
+curl -X POST http://45.136.236.186:8080/api/v1/start -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":2,\"id_tag\":\"VID:FCA47A147861\"}"
+curl -H "X-API-Key: changeme-123" http://45.136.236.186:8080/api/v1/active
+curl -X POST http://45.136.236.186:8080/api/v1/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"transactionId\":3}"
+curl -X POST http://45.136.236.186:8080/api/v1/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"transactionId\":4}"
+curl -H "X-API-Key: changeme-123" http://45.136.236.186:8080/api/v1/active
+curl -H "X-API-Key: changeme-123" http://45.136.236.186:8080/api/v1/history
+curl -X POST http://45.136.236.186:8080/charge/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":1}"
+curl -X POST http://45.136.236.186:8080/charge/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":2}"
+curl -X POST http://45.136.236.186:8080/api/v1/release -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":1}"
+curl -X POST http://45.136.236.186:8080/api/v1/release -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":2}"
+curl -X POST http://45.136.236.186:7071/unplug/1
+curl -X POST http://45.136.236.186:7071/unplug/2
+curl -H "X-API-Key: changeme-123" http://45.136.236.186:8080/api/v1/health
+```
+
+> **Note:** If a stop command fails, issue `/charge/stop` followed by `/api/v1/release`
+> before unplugging the connector.
