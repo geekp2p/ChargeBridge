@@ -186,6 +186,32 @@ class OCPPClient:
         resp = await self._call("MeterValues", payload)
         return resp
 
+    async def on_remotestarttransaction(self, payload: dict) -> dict:
+        """Handle a RemoteStartTransaction request by starting a transaction."""
+        id_tag = payload.get("idTag")
+        connector_id = payload.get("connectorId", 1)
+        if not id_tag or self._active_tx:
+            return {"status": "Rejected"}
+
+        asyncio.create_task(
+            self.start_transaction(connector_id, id_tag, self._last_meter)
+        )
+        return {"status": "Accepted"}
+
+    async def on_remotestoptransaction(self, payload: dict) -> dict:
+        """Handle a RemoteStopTransaction request by stopping the transaction."""
+        tx_id = payload.get("transactionId")
+        if not self._active_tx or (
+            tx_id is not None and tx_id != self._active_tx.get("id")
+        ):
+            return {"status": "Rejected"}
+
+        id_tag = self._active_tx.get("id_tag", "")
+        asyncio.create_task(
+            self.stop_transaction(self._active_tx["id"], id_tag, self._last_meter, reason="Remote")
+        )
+        return {"status": "Accepted"}
+
     async def on_reset(self, payload: dict) -> dict:
         """Handle a Reset request and simulate the reset process."""
         reset_type = payload.get("type")
