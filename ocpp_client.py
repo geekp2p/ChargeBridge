@@ -77,8 +77,23 @@ class OCPPClient:
         except websockets.ConnectionClosed:
             pass
 
-    async def _call(self, action: str, payload: dict) -> dict:
-        """Send an OCPP CALL message and return the payload of the result."""
+    async def _call(
+        self, action: str, payload: dict, *, return_message_id: bool = False
+    ) -> dict | tuple[dict, str]:
+        """Send an OCPP CALL message and return the payload of the result.
+
+        Parameters
+        ----------
+        action: str
+            The OCPP action to invoke.
+        payload: dict
+            Payload for the request.
+        return_message_id: bool, optional
+            When ``True`` the generated message ID is returned along with the
+            response payload.  This is useful for logging and debugging
+            purposes.
+        """
+
         if self._ws is None:
             raise RuntimeError("Client is not connected")
 
@@ -89,6 +104,8 @@ class OCPPClient:
         raw_response = await self._ws.recv()
         response = json.loads(raw_response)
         # OCPP result frames are of the form [3, message_id, payload]
+        if return_message_id:
+            return response[2], message_id
         return response[2]
 
     async def boot_notification(self) -> None:
@@ -191,16 +208,54 @@ class OCPPClient:
         return resp
 
     async def data_transfer(
-        self, vendor_id: str, message_id: str, data: dict | str
+        self,
+        vendor_id: str,
+        message_id: str,
+        data: dict | str,
+        *,
+        debug: bool = False,
     ) -> dict:
+        """Send a DataTransfer request and log useful metadata.
+
+        Parameters
+        ----------
+        vendor_id: str
+            Vendor identification.
+        message_id: str
+            Message identifier.
+        data: dict | str
+            Payload to be sent.  It will be serialized to JSON before
+            transmission.
+        debug: bool, optional
+            When ``True`` the sanitized payload will be logged at debug level
+            for troubleshooting.
+        """
+
+        serialized = json.dumps(data)
         payload = {
             "vendorId": vendor_id,
             "messageId": message_id,
-            "data": json.dumps(data),
+            "data": serialized,
         }
-        logger.debug("DataTransfer request: %s", payload)
-        resp = await self._call("DataTransfer", payload)
-        logger.debug("DataTransfer response: %s", resp)
+
+        resp, req_id = await self._call(
+            "DataTransfer", payload, return_message_id=True
+        )
+        status = resp.get("status")
+        payload_size = len(serialized)
+        logger.info(
+            "DataTransfer req=%s vendor=%s message=%s size=%d status=%s",
+            req_id,
+            vendor_id,
+            message_id,
+            payload_size,
+            status,
+        )
+        if debug:
+            sanitized = serialized.replace("\n", " ")
+            if len(sanitized) > 2000:
+                sanitized = sanitized[:2000] + "..."  # truncate long payloads
+            logger.debug("DataTransfer payload (sanitized): %s", sanitized)
         return resp
 
     async def send_csv_log(self, csv_path: str) -> dict:

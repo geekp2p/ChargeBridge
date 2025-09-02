@@ -43,8 +43,7 @@ Heartbeat received at 2024-xx-xx HH:MM:SS
 
 ✅ python -m py_compile ocpp_client.py
 
-✅ python -m py_compile ocpp_client.py
-
+python -m py_compile ocpp_client.py central.py
 
 
 

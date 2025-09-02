@@ -229,10 +229,50 @@ class CentralSystem(ChargePoint):
         return call_result.MeterValues()
 
     @on(Action.data_transfer)
-    async def on_data_transfer(self, vendor_id, message_id=None, data=None, **kwargs):
+    async def on_data_transfer(
+        self,
+        vendor_id,
+        message_id=None,
+        data=None,
+        *,
+        debug: bool = False,
+        **kwargs,
+    ):
+        """Handle a DataTransfer message.
+
+        Logs parsing issues, the number of accepted entries and the originating
+        charge point ID.  When ``debug`` is ``True`` the (sanitized) payload is
+        also emitted at debug level for troubleshooting.
+        """
+
+        cp_id = self.id
+        try:
+            parsed = json.loads(data) if isinstance(data, str) else data
+        except Exception as exc:
+            logging.error("DataTransfer parse error from %s: %s", cp_id, exc)
+            return call_result.DataTransfer(status=DataTransferStatus.rejected)
+
+        count = 0
+        if isinstance(parsed, list):
+            count = len(parsed)
+        elif parsed is not None:
+            count = 1
+
         logging.info(
-            f"← DataTransfer: vendorId={vendor_id}, messageId={message_id}, data={data}"
+            "← DataTransfer from %s: vendorId=%s, messageId=%s, accepted=%d",
+            cp_id,
+            vendor_id,
+            message_id,
+            count,
         )
+
+        if debug:
+            serialized = json.dumps(parsed) if not isinstance(parsed, str) else parsed
+            sanitized = serialized.replace("\n", " ")
+            if len(sanitized) > 2000:
+                sanitized = sanitized[:2000] + "..."
+            logging.debug("Sanitized DataTransfer payload from %s: %s", cp_id, sanitized)
+
         return call_result.DataTransfer(status=DataTransferStatus.accepted)
 
     @on(Action.start_transaction)
