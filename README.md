@@ -16,6 +16,10 @@ The `OCPPClient` and its helper scripts are intended for local testing and
 demonstrations. When connecting real charging stations directly to the
 central system, these client-side files can be removed.
 
+The `OCPPClient` and its helper scripts are intended for local testing and
+demonstrations. When connecting real charging stations directly to the
+central system, these client-side files can be removed.
+
 ## Conda Installation
 
 1. Install [Miniconda or Anaconda](https://docs.conda.io/en/latest/miniconda.html).
@@ -34,6 +38,20 @@ Run the demo orchestrator after the environment is prepared:
 ```bash
 python charging_controller.py
 ```
+
+4. Observe the logs from both the client and `central.py`. A
+   `BootNotification` is sent immediately after the WebSocket connection is
+   established. The central system replies with an interval (default 300 s)
+   and the client schedules a periodic `Heartbeat` task. You should see log
+   entries similar to:
+
+   ```
+   ← BootNotification from vendor=Unknown, model=Gresgying 120-180 kW DC
+   ← Heartbeat received
+   ```
+
+   The heartbeat message repeats roughly every 300 seconds unless the server
+   specifies a different interval.
 
 ## Local Testing
 
