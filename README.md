@@ -12,6 +12,10 @@ stations while remaining flexible for other models.
 - Session history and connector status APIs for energy use and plug state monitoring
 - Primarily tested with Gresgying 120–180 kW DC chargers but adaptable to other stations
 
+The `OCPPClient` and its helper scripts are intended for local testing and
+demonstrations. When connecting real charging stations directly to the
+central system, these client-side files can be removed.
+
 ## Conda Installation
 
 1. Install [Miniconda or Anaconda](https://docs.conda.io/en/latest/miniconda.html).

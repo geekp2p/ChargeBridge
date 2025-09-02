@@ -97,3 +97,35 @@ class OCPPClient:
             "timestamp": datetime.utcnow().isoformat(),
         }
         return await self._call("StopTransaction", payload)
+
+    async def send_meter_values(
+        self,
+        transaction_id: int,
+        connector_id: int,
+        sample: dict,
+    ) -> dict:
+        """Send a MeterValues message for the given sample."""
+
+        entry = {
+            "timestamp": sample.get("timestamp", datetime.utcnow().isoformat()),
+            "sampledValue": [],
+        }
+
+        mapping = {
+            "current": "Current.Import",
+            "voltage": "Voltage",
+            "soc": "SoC",
+            "temperature": "Temperature",
+        }
+
+        for key, measurand in mapping.items():
+            value = sample.get(key)
+            if value is not None:
+                entry["sampledValue"].append({"value": str(value), "measurand": measurand})
+
+        payload = {
+            "transactionId": transaction_id,
+            "connectorId": connector_id,
+            "meterValue": [entry],
+        }
+        return await self._call("MeterValues", payload)

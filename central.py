@@ -205,6 +205,27 @@ class CentralSystem(ChargePoint):
     @on(Action.meter_values)
     async def on_meter_values(self, connector_id, meter_value, **kwargs):
         logging.info(f"← MeterValues from connector {connector_id}: {meter_value}")
+        c_id = int(connector_id)
+        session = self.active_tx.get(c_id)
+        if session is not None:
+            for entry in meter_value:
+                sample = {"timestamp": entry.get("timestamp")}
+                for sv in entry.get("sampledValue", []):
+                    meas = sv.get("measurand")
+                    try:
+                        val = float(sv.get("value"))
+                    except (TypeError, ValueError):
+                        continue
+                    if meas == "Current.Import":
+                        sample["current"] = val
+                    elif meas == "Voltage":
+                        sample["voltage"] = val
+                    elif meas == "SoC":
+                        sample["soc"] = val
+                    elif meas == "Temperature":
+                        sample["temperature"] = val
+                session.setdefault("meter_samples", []).append(sample)
+                session["last_sample"] = sample
         return call_result.MeterValues()
 
     @on(Action.data_transfer)
@@ -246,6 +267,7 @@ class CentralSystem(ChargePoint):
             "id_tag": id_tag,
             "meter_start": meter_start,
             "start_time": _parse_timestamp(timestamp),
+            "meter_samples": [],
         }
         if pending and "vid" in pending:
             info["vid"] = pending["vid"]
@@ -289,6 +311,7 @@ class CentralSystem(ChargePoint):
                 "startTime": start_time.isoformat() if start_time else None,
                 "stopTime": stop_time.isoformat(),
                 "durationSecs": duration_secs,
+                "samples": session_info.get("meter_samples", []),
             }
             self.completed_sessions.append(record)
             logging.info(f"Session summary: {record}")
@@ -361,6 +384,7 @@ class ActiveSession(BaseModel):
     connectorId: int
     idTag: str
     transactionId: int
+    lastSample: Dict[str, Any] | None = None
 
 
 class CompletedSession(BaseModel):
@@ -376,6 +400,7 @@ class CompletedSession(BaseModel):
     startTime: str
     stopTime: str
     durationSecs: float
+    samples: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class ConnectorStatus(BaseModel):
@@ -489,6 +514,7 @@ async def api_active_sessions():
                     connectorId=conn_id,
                     idTag=info.get("id_tag", ""),
                     transactionId=info.get("transaction_id", 0),
+                    lastSample=info.get("last_sample"),
                 )
             )
     return {"sessions": [s.dict() for s in sessions]}
