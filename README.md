@@ -28,6 +28,7 @@ central system, these client-side files can be removed.
 | RemoteStart/RemoteStop                    |        ✅        |     ❌      | use `/api/v1/start` and `/api/v1/stop`; client can't handle OCPP `RemoteStartTransaction` |
 | StatusNotification                        |        ✅        |     ✅      | central logs show `Available → Charging → Finishing` transitions |
 | Change/Get Configuration & TriggerMessage | ✅ (no TriggerMessage) | ❌ | – |
+| ChangeAvailability                          |        ✅        |     ✅      | use `/api/v1/availability` |
 | UpdateFirmware                            |        ❌        |     ❌      | – |
 | Reset (Hard/Soft)                         |        ✅        |     ✅      | use `/api/v1/reset` |
 

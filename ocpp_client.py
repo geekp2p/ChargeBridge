@@ -379,3 +379,27 @@ class OCPPClient:
                 self._heartbeat_task = None
             self._active_tx = None
             await self.boot_notification()
+
+    async def on_changeavailability(self, payload: dict) -> dict:
+        """Handle a ChangeAvailability request from the central system.
+
+        The charge point simulates the transition by sending a corresponding
+        StatusNotification for the targeted connector.  Only "Operative" and
+        "Inoperative" types are recognized; any other value results in a
+        rejection.
+        """
+
+        connector_id = int(payload.get("connectorId", 0))
+        availability_type = payload.get("type")
+        logger.info(
+            f"\u2190 ChangeAvailability connector={connector_id} type={availability_type}"
+        )
+        if availability_type not in ("Operative", "Inoperative"):
+            return {"status": "Rejected"}
+
+        status = "Available" if availability_type == "Operative" else "Unavailable"
+        try:
+            await self.status_notification(connector_id, status)
+        except Exception:
+            logger.debug("StatusNotification failed", exc_info=True)
+        return {"status": "Accepted"}

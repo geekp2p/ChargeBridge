@@ -16,6 +16,8 @@ from ocpp.v16.enums import (
     RemoteStartStopStatus,
     DataTransferStatus,
     ResetStatus,
+    AvailabilityStatus,
+    AvailabilityType,
 )
 
 from fastapi import FastAPI, HTTPException, Request, Header
@@ -106,6 +108,18 @@ class CentralSystem(ChargePoint):
         logging.info(f"→ UnlockConnector to {self.id} (connector={connector_id})")
         resp = await self.call(req)
         logging.info(f"← UnlockConnector.conf: {resp}")
+        return getattr(resp, "status", None)
+
+    async def change_availability(self, connector_id: int, available: bool):
+        req = call.ChangeAvailability(
+            connector_id=connector_id,
+            type=AvailabilityType.operative if available else AvailabilityType.inoperative,
+        )
+        logging.info(
+            f"→ ChangeAvailability to {self.id} (connector={connector_id}, available={available})"
+        )
+        resp = await self.call(req)
+        logging.info(f"← ChangeAvailability.conf: {resp}")
         return getattr(resp, "status", None)
 
     async def _no_session_watchdog(self, connector_id: int, timeout: int = 90):
@@ -434,6 +448,12 @@ class ResetReq(BaseModel):
     type: str
 
 
+class AvailabilityReq(BaseModel):
+    cpid: str
+    connectorId: int
+    available: bool
+
+
 class ActiveSession(BaseModel):
     cpid: str
     connectorId: int
@@ -552,6 +572,40 @@ async def api_release(req: ReleaseReq):
     try:
         await cp.unlock_connector(req.connectorId)
         return {"ok": True, "message": "UnlockConnector sent"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/availability")
+async def api_change_availability(req: AvailabilityReq):
+    cp = connected_cps.get(req.cpid)
+    if not cp:
+        raise HTTPException(status_code=404, detail=f"ChargePoint '{req.cpid}' not connected")
+    try:
+        status = await cp.change_availability(req.connectorId, req.available)
+        if status not in (AvailabilityStatus.accepted, AvailabilityStatus.scheduled):
+            raise HTTPException(status_code=409, detail=f"ChangeAvailability rejected: {status}")
+        value = status.value if hasattr(status, "value") else status
+        return {"ok": True, "status": value}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/availability")
+async def api_change_availability(req: AvailabilityReq):
+    cp = connected_cps.get(req.cpid)
+    if not cp:
+        raise HTTPException(status_code=404, detail=f"ChargePoint '{req.cpid}' not connected")
+    try:
+        status = await cp.change_availability(req.connectorId, req.available)
+        if status not in (AvailabilityStatus.accepted, AvailabilityStatus.scheduled):
+            raise HTTPException(status_code=409, detail=f"ChangeAvailability rejected: {status}")
+        value = status.value if hasattr(status, "value") else status
+        return {"ok": True, "status": value}
     except HTTPException:
         raise
     except Exception as e:
@@ -690,6 +744,17 @@ async def main():
                     asyncio.run_coroutine_threadsafe(cp.remote_stop(tx_match), loop)
                 else:
                     asyncio.run_coroutine_threadsafe(cp.unlock_connector(num), loop)
+                continue
+            if parts[0] == "avail" and len(parts) == 4:
+                cpid, connector, state = parts[1], int(parts[2]), parts[3].lower()
+                cp = connected_cps.get(cpid)
+                if not cp:
+                    print("No such CP")
+                    continue
+                available = state in ("1", "true", "available", "operational", "operative")
+                asyncio.run_coroutine_threadsafe(
+                    cp.change_availability(connector, available), loop
+                )
                 continue
             print("Unknown command. Examples: start CP_123 1 TESTTAG | stop CP_123 42 | ls | map CP_123")
 
