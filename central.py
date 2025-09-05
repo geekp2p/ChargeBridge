@@ -15,6 +15,7 @@ from ocpp.v16.enums import (
     Action,
     RemoteStartStopStatus,
     DataTransferStatus,
+    ResetStatus,
 )
 
 from fastapi import FastAPI, HTTPException, Request, Header
@@ -82,6 +83,15 @@ class CentralSystem(ChargePoint):
         status = getattr(resp, "status", None)
         if status != RemoteStartStopStatus.accepted:
             logging.warning(f"RemoteStopTransaction rejected: {status}")
+        return status
+
+    async def remote_reset(self, reset_type: str):
+        req = call.Reset(type=reset_type)
+        logging.info(f"→ Reset to {self.id} (type={reset_type})")
+        resp = await self.call(req)
+        status = getattr(resp, "status", None)
+        if status != ResetStatus.accepted:
+            logging.warning(f"Reset rejected: {status}")
         return status
 
     async def change_configuration(self, key: str, value: str):
@@ -419,6 +429,11 @@ class ReleaseReq(BaseModel):
     connectorId: int
 
 
+class ResetReq(BaseModel):
+    cpid: str
+    type: str
+
+
 class ActiveSession(BaseModel):
     cpid: str
     connectorId: int
@@ -537,6 +552,24 @@ async def api_release(req: ReleaseReq):
     try:
         await cp.unlock_connector(req.connectorId)
         return {"ok": True, "message": "UnlockConnector sent"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/reset")
+async def api_reset(req: ResetReq):
+    cp = connected_cps.get(req.cpid)
+    if not cp:
+        raise HTTPException(status_code=404, detail=f"ChargePoint '{req.cpid}' not connected")
+    if req.type not in ("Hard", "Soft"):
+        raise HTTPException(status_code=400, detail="invalid reset type")
+    try:
+        status = await cp.remote_reset(req.type)
+        if status != ResetStatus.accepted:
+            raise HTTPException(status_code=409, detail=f"Reset rejected: {status}")
+        return {"ok": True, "status": status.value if hasattr(status, 'value') else status}
     except HTTPException:
         raise
     except Exception as e:

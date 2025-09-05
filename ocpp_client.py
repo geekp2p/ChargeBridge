@@ -349,6 +349,7 @@ class OCPPClient:
     async def on_reset(self, payload: dict) -> dict:
         """Handle a Reset request and simulate the reset process."""
         reset_type = payload.get("type")
+        logger.info(f"← Reset request type={reset_type}")
         if reset_type not in ("Hard", "Soft"):
             return {"status": "Rejected"}
 
@@ -367,7 +368,7 @@ class OCPPClient:
     async def _perform_reset(self, reset_type: str) -> None:
         """Simulate a hard or soft reset of the client."""
         await asyncio.sleep(1)
-        print(f"Simulating {reset_type} reset")
+        logger.info(f"Simulating {reset_type} reset")
         if reset_type == "Hard":
             await self.close()
             await asyncio.sleep(1)

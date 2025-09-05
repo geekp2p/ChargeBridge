@@ -29,7 +29,7 @@ central system, these client-side files can be removed.
 | StatusNotification                        |        ✅        |     ✅      | central logs show `Available → Charging → Finishing` transitions |
 | Change/Get Configuration & TriggerMessage | ✅ (no TriggerMessage) | ❌ | – |
 | UpdateFirmware                            |        ❌        |     ❌      | – |
-| Reset (Hard/Soft)                         |        ❌        |     ❌      | – |
+| Reset (Hard/Soft)                         |        ✅        |     ✅      | use `/api/v1/reset` |
 
 
 ## Conda Installation

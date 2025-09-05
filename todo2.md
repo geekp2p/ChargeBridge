@@ -11,4 +11,4 @@ Tasks inferred from `rddPOC01140136.csv` and current codebase:
 - [ ] Process `StatusNotification` messages to keep connector state updated.
 - [ ] Implement configuration management via `ChangeConfiguration` and `GetConfiguration`, and support `TriggerMessage` requests.
 <!-- - [ ] Support firmware management through `UpdateFirmware` requests. -->
-- [ ] Allow remote `Reset` commands (Hard/Soft) and handle resulting `StopTransaction` reasons.
+- [x] Allow remote `Reset` commands (Hard/Soft) and handle resulting `StopTransaction` reasons.

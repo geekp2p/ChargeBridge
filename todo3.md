@@ -9,4 +9,4 @@
 | StatusNotification                        |                ✅                |      ❌      | Client ไม่ส่งสถานะ Available/Charging/Finishing          |
 | Change/Get Configuration & TriggerMessage | ✅ (ยังไม่รองรับ TriggerMessage) |      ❌      | Client ไม่รองรับ และ TriggerMessage ยังขาด               |
 | UpdateFirmware                            |                ❌                |      ❌      | ยังไม่มีการจัดการอัปเดตเฟิร์มแวร์                        |
-| Reset (Hard/Soft)                         |                ❌                |      ❌      | ยังไม่รองรับคำสั่งรีเซ็ต                                 |
+| Reset (Hard/Soft)                         |                ✅                |      ✅      | ใช้ `/api/v1/reset`                 |
