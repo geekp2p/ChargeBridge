@@ -63,3 +63,8 @@ python -m py_compile ocpp_client.py central.py
 
 
 python -m py_compile ocpp_client.py central.py
+
+
+python -m py_compile ocpp_client.py central.py
+
+python - <<'PY' ... (integration test showing ChangeAvailability succeeds and updates connector state)
