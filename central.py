@@ -448,7 +448,6 @@ async def add_station(request: Request):
     station = store.create_station(data.name, data.location)
     return station.model_dump()
 
-
 @app.get("/api/v1/stations")
 @app.get("/stations", include_in_schema=False)
 def get_stations():
@@ -685,16 +684,23 @@ async def api_change_availability(req: AvailabilityReq):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.post("/api/v1/reset")
-async def api_reset(req: ResetReq):
-    cp = connected_cps.get(req.cpid)
+async def api_reset(request: Request):
+    payload: Dict[str, Any]
+    try:
+        payload = await request.json()
+    except Exception:
+        form = await request.form()
+        payload = dict(form) if form else dict(request.query_params)
+
+    data = ResetReq(**payload)
+    cp = connected_cps.get(data.cpid)
     if not cp:
-        raise HTTPException(status_code=404, detail=f"ChargePoint '{req.cpid}' not connected")
-    if req.type not in ("Hard", "Soft"):
+        raise HTTPException(status_code=404, detail=f"ChargePoint '{data.cpid}' not connected")
+    if data.type not in ("Hard", "Soft"):
         raise HTTPException(status_code=400, detail="invalid reset type")
     try:
-        status = await cp.remote_reset(req.type)
+        status = await cp.remote_reset(data.type)
         if status != ResetStatus.accepted:
             raise HTTPException(status_code=409, detail=f"Reset rejected: {status}")
         return {"ok": True, "status": status.value if hasattr(status, 'value') else status}
@@ -702,7 +708,6 @@ async def api_reset(req: ResetReq):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.get("/api/v1/pending")
 def list_pending():
