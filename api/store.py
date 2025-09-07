@@ -1,11 +1,12 @@
 from datetime import datetime
 from itertools import count
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 
 from .models import ChargingSession, Connector, Station
 
 stations: Dict[int, Station] = {}
 sessions: Dict[int, ChargingSession] = {}
+sessions_history: List[Dict[str, Any]] = []
 _connectors: Dict[int, Connector] = {}
 
 _station_seq = count(1)

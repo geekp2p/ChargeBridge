@@ -472,6 +472,10 @@ class SessionStartReq(BaseModel):
     vehicleId: str
 
 
+class SessionStopReq(BaseModel):
+    kWhDelivered: float
+
+
 class ActiveSession(BaseModel):
     cpid: str
     connectorId: int
@@ -704,6 +708,38 @@ def api_start_session(connector_id: int, req: SessionStartReq):
     except Exception:
         pass
     return {"transactionId": tx_id}
+
+
+@app.post("/api/v1/sessions/{connector_id}/stop")
+def api_stop_session(connector_id: int, req: SessionStopReq):
+    connector = store.get_connector(connector_id)
+    if connector is None:
+        raise HTTPException(status_code=404, detail="Connector not found")
+    active_id = None
+    active_session = None
+    for sid, session in list(store.sessions.items()):
+        conn = session.get("connector_id") if isinstance(session, dict) else getattr(session, "connector_id", None)
+        status = session.get("status") if isinstance(session, dict) else getattr(session, "status", None)
+        if conn == connector_id and status == "active":
+            active_id = sid
+            active_session = session
+            break
+    if active_session is None:
+        raise HTTPException(status_code=404, detail="Active session not found")
+    finished_at = datetime.utcnow().isoformat() + "Z"
+    if isinstance(active_session, dict):
+        active_session["finishedAt"] = finished_at
+        active_session["kWhDelivered"] = req.kWhDelivered
+        active_session["status"] = "completed"
+    else:
+        setattr(active_session, "finishedAt", finished_at)
+        setattr(active_session, "kWhDelivered", req.kWhDelivered)
+        setattr(active_session, "status", "completed")
+    connector.status = "Available"
+    store.sessions_history.append(active_session)
+    if active_id is not None:
+        store.sessions.pop(active_id, None)
+    return {"session": active_session}
 
 
 @app.get("/api/v1/sessions/{vehicle_id}")
