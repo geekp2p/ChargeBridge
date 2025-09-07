@@ -420,13 +420,26 @@ async def log_requests(request: Request, call_next):
 def health():
     return {"ok": True, "time": datetime.utcnow().isoformat() + "Z"}
 
+class StationIn(BaseModel):
+    name: str
+    location: str | None = None
+
+
+@app.post("/api/v1/stations")
+@app.post("/stations", include_in_schema=False)
+def add_station(data: StationIn):
+    station = store.create_station(data.name, data.location)
+    return station.model_dump()
+
 
 @app.get("/api/v1/stations")
+@app.get("/stations", include_in_schema=False)
 def get_stations():
     return [station.model_dump() for station in store.stations.values()]
 
 
 @app.get("/api/v1/stations/{station_id}")
+@app.get("/stations/{station_id}", include_in_schema=False)
 def get_station(station_id: int):
     station = store.get_station(station_id)
     if station is None:

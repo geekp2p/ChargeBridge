@@ -5,7 +5,7 @@
 
 ```bash
 curl -H "X-API-Key: changeme-123" http://45.136.236.186:8080/api/v1/status
-curl -X POST http://45.136.236.186:8080/stations -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d '{"name":"Demo","location":"TheMansion"}'
+curl -X POST http://45.136.236.186:8080/api/v1/stations -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d '{"name":"Demo","location":"TheMansion"}'
 curl -X POST http://45.136.236.186:8080/api/v1/reset -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d '{"cpid":"Gresgying02","type":"Soft"}'
 curl -X DELETE http://45.136.236.186:8080/api/v1/stations/1 -H "X-API-Key: changeme-123"
 ```
