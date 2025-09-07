@@ -52,3 +52,27 @@ async def on_data_transfer(request, session_context):
         session_context["vid"] = vid
 
     return {}
+
+async def on_authorize(request, session_context):
+    """Handle an :class:`~ocpp.v16.authorize.Authorize` request.
+
+    Extracts the ``id_tag`` from the incoming request, resolves it to a VID
+    using :class:`VIDManager`, stores the VID in ``session_context`` and
+    includes it in the returned Authorize response payload.
+
+    Parameters
+    ----------
+    request:
+        Authorize request object containing ``id_tag``.
+    session_context: dict
+        Mutable mapping used to keep per-session state.
+
+    Returns
+    -------
+    dict
+        Authorize response payload including the resolved ``vid``.
+    """
+    id_tag = getattr(request, "id_tag", None)
+    vid = vid_manager.get_or_create_vid("id_tag", id_tag) if id_tag else None
+    session_context["vid"] = vid
+    return {"id_tag_info": {"status": "Accepted"}, "vid": vid}
