@@ -440,7 +440,6 @@ def delete_station(station_id: int):
         raise HTTPException(status_code=404, detail="Station not found")
     return {"ok": True}
 
-
 class StartReq(BaseModel):
     cpid: str
     connectorId: int

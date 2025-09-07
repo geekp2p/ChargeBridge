@@ -11,6 +11,7 @@
 | `GET` | `/api/v1/health` | ตรวจสอบสถานะของเซิร์ฟเวอร์ | `curl http://HOST:8080/api/v1/health`<br>`{"ok":true,"time":"2024-01-01T00:00:00Z"}` |
 | `GET` | `/api/v1/stations` | รายชื่อสถานีพร้อมสถานะโดยรวม | `curl http://HOST:8080/api/v1/stations`<br>`[{"id":1,"name":"Gresgying02","connectors":[{"id":1,"status":"Available"}]}]` |
 | `GET` | `/api/v1/stations/{stationId}` | รายละเอียดสถานีและหัวชาร์จทุกตัว | `curl http://HOST:8080/api/v1/stations/1`<br>`{"id":1,"name":"Gresgying02","connectors":[{"id":1,"status":"Available"}]}` |
+| `DELETE` | `/api/v1/stations/{stationId}` | ลบสถานีหนึ่ง | `curl -X DELETE http://HOST:8080/api/v1/stations/1`<br>`{"ok":true}` |
 | `GET` | `/api/v1/status` | สถานะปัจจุบันของทุกหัวชาร์จที่เชื่อมต่อ | `curl http://HOST:8080/api/v1/status`<br>`{"connectors":[{"cpid":"Gresgying02","connectorId":1,"status":"Available"}]}` |
 
 ## การจัดการเซสชัน (เชื่อมต่อ OCPP)
