@@ -678,6 +678,43 @@ async def api_session_history():
     return {"sessions": [s.dict() for s in sessions]}
 
 
+@app.get("/api/v1/sessions/{vehicle_id}")
+def get_sessions_for_vehicle(vehicle_id: str):
+    """Return current and past sessions for the given vehicle ID."""
+
+    current = None
+    history = []
+
+    def _to_dict(obj):
+        if hasattr(obj, "model_dump"):
+            return obj.model_dump()
+        if hasattr(obj, "dict"):
+            return obj.dict()  # type: ignore[call-arg]
+        if hasattr(obj, "__dict__"):
+            return obj.__dict__
+        return obj
+
+    for session in store.sessions.values():
+        vid = None
+        if isinstance(session, dict):
+            vid = session.get("vehicleId") or session.get("vehicle_id")
+            status = session.get("status")
+        else:
+            vid = getattr(session, "vehicleId", getattr(session, "vehicle_id", None))
+            status = getattr(session, "status", None)
+
+        if vid != vehicle_id:
+            continue
+
+        session_dict = _to_dict(session)
+        if status == "active" or (isinstance(session_dict, dict) and session_dict.get("status") == "active"):
+            current = session_dict
+        else:
+            history.append(session_dict)
+
+    return {"current": current, "history": history}
+
+
 @app.get("/api/v1/status")
 async def api_connector_status():
     statuses: list[ConnectorStatus] = []
