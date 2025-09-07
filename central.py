@@ -434,6 +434,13 @@ def get_station(station_id: int):
     return station.model_dump()
 
 
+@app.delete("/api/v1/stations/{station_id}")
+def delete_station(station_id: int):
+    if not store.delete_station(station_id):
+        raise HTTPException(status_code=404, detail="Station not found")
+    return {"ok": True}
+
+
 class StartReq(BaseModel):
     cpid: str
     connectorId: int
