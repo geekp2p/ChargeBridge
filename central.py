@@ -468,6 +468,10 @@ class AvailabilityReq(BaseModel):
     available: bool
 
 
+class SessionStartReq(BaseModel):
+    vehicleId: str
+
+
 class ActiveSession(BaseModel):
     cpid: str
     connectorId: int
@@ -676,6 +680,30 @@ async def api_session_history():
         for record in cp.completed_sessions:
             sessions.append(CompletedSession(cpid=cpid, **record))
     return {"sessions": [s.dict() for s in sessions]}
+
+
+@app.post("/api/v1/sessions/{connector_id}/start")
+def api_start_session(connector_id: int, req: SessionStartReq):
+    connector = store.get_connector(connector_id)
+    if connector is None:
+        raise HTTPException(status_code=404, detail="Connector not found")
+    if getattr(connector, "status", None) != "Available":
+        raise HTTPException(status_code=409, detail="Connector not available")
+    connector.status = "Charging"
+    tx_id = next(_tx_counter)
+    session = {
+        "id": tx_id,
+        "connector_id": connector_id,
+        "vehicleId": req.vehicleId,
+        "status": "active",
+        "started_at": datetime.utcnow().isoformat() + "Z",
+    }
+    store.sessions[tx_id] = session
+    try:
+        connector.charging_sessions.append(session)
+    except Exception:
+        pass
+    return {"transactionId": tx_id}
 
 
 @app.get("/api/v1/sessions/{vehicle_id}")
