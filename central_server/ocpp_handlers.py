@@ -5,7 +5,7 @@ from services.vid_manager import VIDManager
 vid_manager = VIDManager()
 
 
-def to_vid(source_type: str, source_value: str) -> int:
+def to_vid(source_type: str, source_value: str) -> str:
     """Convert incoming identifier to a VID using :class:`VIDManager`.
 
     Parameters
@@ -17,7 +17,7 @@ def to_vid(source_type: str, source_value: str) -> int:
 
     Returns
     -------
-    int
+    str
         The VID associated with the identifier.
     """
     return vid_manager.get_or_create_vid(source_type, source_value)
@@ -74,5 +74,8 @@ async def on_authorize(request, session_context):
     """
     id_tag = getattr(request, "id_tag", None)
     vid = vid_manager.get_or_create_vid("id_tag", id_tag) if id_tag else None
+    temp = session_context.get("vid")
+    if temp and vid and temp != vid:
+        vid_manager.link_temp_vid(temp, vid)
     session_context["vid"] = vid
     return {"id_tag_info": {"status": "Accepted"}, "vid": vid}

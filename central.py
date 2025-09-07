@@ -25,17 +25,18 @@ from fastapi import FastAPI, HTTPException, Request, Header
 from pydantic import BaseModel, Field, ConfigDict, AliasChoices, ValidationError
 import uvicorn
 from api import store
+from fastapi import FastAPI, HTTPException, Request, Header
+from pydantic import BaseModel, Field, ConfigDict, AliasChoices, ValidationError
+import uvicorn
+from api import store
 from api.models import PendingSession
+from services.vid_manager import VIDManager
 
 logging.basicConfig(level=logging.INFO)
 
 connected_cps: Dict[str, "CentralSystem"] = {}
 _tx_counter = itertools.count(1)
-
-
-def _generate_vid() -> str:
-    """Create a short pseudo-random vehicle identifier."""
-    return f"VID:{uuid4().hex[:8].upper()}"
+vid_manager = VIDManager()
 
 
 def _parse_timestamp(ts: str) -> datetime:
@@ -210,7 +211,13 @@ class CentralSystem(ChargePoint):
     async def on_authorize(self, id_tag, **kwargs):
         logging.info(f"← Authorize request, idTag={id_tag}")
         conn_id = int(kwargs.get("connector_id", 0) or 0)
-        vid = id_tag if id_tag else None
+        vid = vid_manager.get_or_create_vid("id_tag", id_tag) if id_tag else None
+        temp = self.pending_start.get(conn_id, {}).get("vid")
+        if temp and vid and temp != vid:
+            vid_manager.link_temp_vid(temp, vid)
+            self.pending_start[conn_id]["vid"] = vid
+        elif temp and not vid:
+            vid = temp
         store.pending[(self.id, conn_id)] = PendingSession(
             station_id=self.id, connector_id=conn_id, id_tag=id_tag, vid=vid
         )
@@ -229,7 +236,9 @@ class CentralSystem(ChargePoint):
             if pending and pending.vid:
                 vid = pending.vid
             else:
-                vid = self.last_vid or _generate_vid()
+                vid = vid_manager.get_or_create_vid(
+                    "temp", f"{self.id}:{c_id}:{uuid4().hex}"
+                )
             store.pending[(self.id, c_id)] = PendingSession(
                 station_id=self.id, connector_id=c_id, id_tag=vid, vid=vid
             )
@@ -329,11 +338,19 @@ class CentralSystem(ChargePoint):
 
         vid = None
         if isinstance(parsed, dict):
-            vid = parsed.get("vid") or parsed.get("vehicleId") or parsed.get("vehicle_id")
+            raw_vid = (
+                parsed.get("vid")
+                or parsed.get("vehicleId")
+                or parsed.get("vehicle_id")
+            )
+            if raw_vid:
+                vid = vid_manager.get_or_create_vid("vid", raw_vid)
         if vid:
             self.last_vid = vid
             for (sid, cid), pending in list(store.pending.items()):
                 if sid == self.id:
+                    if pending.vid and pending.vid != vid:
+                        vid_manager.link_temp_vid(pending.vid, vid)
                     pending.id_tag = vid
                     pending.vid = vid
 
@@ -376,8 +393,8 @@ class CentralSystem(ChargePoint):
         }
         if pending and "vid" in pending:
             info["vid"] = pending["vid"]
-        elif id_tag and id_tag.upper().startswith("VID"):
-            info["vid"] = id_tag
+        elif id_tag:
+            info["vid"] = vid_manager.get_or_create_vid("id_tag", id_tag)
         elif self.last_vid:
             info["vid"] = self.last_vid
             self.last_vid = None
@@ -614,7 +631,7 @@ async def api_start(req: StartReq):
         id_tag = req.id_tag or DEFAULT_ID_TAG
         info = {"id_tag": id_tag}
         if req.vid:
-            info["vid"] = req.vid
+            info["vid"] = vid_manager.get_or_create_vid("vid", req.vid)
         cp.pending_start[int(req.connectorId)] = info
         status = await cp.remote_start(req.connectorId, id_tag)
         if status != RemoteStartStopStatus.accepted:
