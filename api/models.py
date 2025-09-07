@@ -33,4 +33,5 @@ class PendingSession(BaseModel):
     connector_id: int
     id_tag: Optional[str] = None
     vid: Optional[str] = None
+    mac: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)

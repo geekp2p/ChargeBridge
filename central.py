@@ -73,6 +73,7 @@ class CentralSystem(ChargePoint):
         self.completed_sessions: List[Dict[str, Any]] = []
         self.last_heartbeat: datetime | None = None
         self.last_vid: str | None = None
+        self.last_mac: str | None = None
 
     async def remote_start(self, connector_id: int, id_tag: str):
         req = call.RemoteStartTransaction(
@@ -212,16 +213,27 @@ class CentralSystem(ChargePoint):
         logging.info(f"← Authorize request, idTag={id_tag}")
         conn_id = int(kwargs.get("connector_id", 0) or 0)
         vid = vid_manager.get_or_create_vid("id_tag", id_tag) if id_tag else None
-        temp = self.pending_start.get(conn_id, {}).get("vid")
-        if temp and vid and temp != vid:
-            vid_manager.link_temp_vid(temp, vid)
-            self.pending_start[conn_id]["vid"] = vid
-        elif temp and not vid:
-            vid = temp
+        info = self.pending_start.get(conn_id, {})
+        temp_vid = info.get("vid")
+        mac = info.get("mac") or self.last_mac
+        if mac:
+            mac_vid = vid_manager.get_or_create_vid("mac", mac)
+            if vid and vid != mac_vid:
+                vid_manager.link_temp_vid(mac_vid, vid)
+            vid = vid or mac_vid
+        if temp_vid and vid and temp_vid != vid:
+            vid_manager.link_temp_vid(temp_vid, vid)
+        elif temp_vid and not vid:
+            vid = temp_vid
+        info["vid"] = vid
+        if mac:
+            info["mac"] = mac
+        self.pending_start[conn_id] = info
         store.pending[(self.id, conn_id)] = PendingSession(
-            station_id=self.id, connector_id=conn_id, id_tag=id_tag, vid=vid
+            station_id=self.id, connector_id=conn_id, id_tag=id_tag, vid=vid, mac=mac
         )
         self.last_vid = vid
+        self.last_mac = mac if mac else self.last_mac
         return call_result.Authorize(id_tag_info={"status": AuthorizationStatus.accepted})
 
     @on(Action.status_notification)
@@ -233,17 +245,31 @@ class CentralSystem(ChargePoint):
         self.connector_status[c_id] = status
         if status == "Preparing":
             pending = store.pending.get((self.id, c_id))
-            if pending and pending.vid:
-                vid = pending.vid
-            else:
+            vid = pending.vid if pending and pending.vid else None
+            mac = pending.mac if pending and pending.mac else None
+            if not vid:
+                vid = self.last_vid
+            if not mac:
+                mac = self.last_mac
+            if mac:
+                mac_vid = vid_manager.get_or_create_vid("mac", mac)
+                if vid and vid != mac_vid:
+                    vid_manager.link_temp_vid(mac_vid, vid)
+                vid = vid or mac_vid
+            if not vid:
                 vid = vid_manager.get_or_create_vid(
                     "temp", f"{self.id}:{c_id}:{uuid4().hex}"
                 )
             store.pending[(self.id, c_id)] = PendingSession(
-                station_id=self.id, connector_id=c_id, id_tag=vid, vid=vid
+                station_id=self.id,
+                connector_id=c_id,
+                id_tag=vid,
+                vid=vid,
+                mac=mac,
             )
-            self.pending_start[c_id] = {"vid": vid}
+            self.pending_start[c_id] = {"vid": vid, "mac": mac}
             self.last_vid = None
+            self.last_mac = None
             store.pending.pop((self.id, 0), None)
         else:
             store.pending.pop((self.id, c_id), None)
@@ -337,6 +363,7 @@ class CentralSystem(ChargePoint):
             logging.debug("Sanitized DataTransfer payload from %s: %s", cp_id, sanitized)
 
         vid = None
+        mac = None
         if isinstance(parsed, dict):
             raw_vid = (
                 parsed.get("vid")
@@ -345,6 +372,15 @@ class CentralSystem(ChargePoint):
             )
             if raw_vid:
                 vid = vid_manager.get_or_create_vid("vid", raw_vid)
+            mac = parsed.get("mac") or parsed.get("macId") or parsed.get("mac_id")
+        if not mac and vendor_id == "MacID" and isinstance(data, str):
+            mac = data
+        if mac:
+            mac_vid = vid_manager.get_or_create_vid("mac", mac)
+            if vid and vid != mac_vid:
+                vid_manager.link_temp_vid(mac_vid, vid)
+            vid = vid or mac_vid
+            self.last_mac = mac
         if vid:
             self.last_vid = vid
             for (sid, cid), pending in list(store.pending.items()):
@@ -353,6 +389,12 @@ class CentralSystem(ChargePoint):
                         vid_manager.link_temp_vid(pending.vid, vid)
                     pending.id_tag = vid
                     pending.vid = vid
+                    if mac:
+                        pending.mac = mac
+                    ps = self.pending_start.setdefault(cid, {})
+                    ps["vid"] = vid
+                    if mac:
+                        ps["mac"] = mac
 
         return call_result.DataTransfer(status=DataTransferStatus.accepted)
 
@@ -391,13 +433,21 @@ class CentralSystem(ChargePoint):
             "start_time": _parse_timestamp(timestamp),
             "meter_samples": [],
         }
-        if pending and "vid" in pending:
-            info["vid"] = pending["vid"]
-        elif id_tag:
+        if pending:
+            if "vid" in pending:
+                info["vid"] = pending["vid"]
+            if "mac" in pending:
+                info["mac"] = pending["mac"]
+        if id_tag and "vid" not in info:
             info["vid"] = vid_manager.get_or_create_vid("id_tag", id_tag)
-        elif self.last_vid:
+        if self.last_vid and "vid" not in info:
             info["vid"] = self.last_vid
             self.last_vid = None
+        if self.last_mac and "mac" not in info:
+            info["mac"] = self.last_mac
+            self.last_mac = None
+        if "mac" in info and "vid" not in info:
+            info["vid"] = vid_manager.get_or_create_vid("mac", info["mac"])
         self.active_tx[int(connector_id)] = info
         task = self.no_session_tasks.pop(int(connector_id), None)
         if task:
@@ -432,6 +482,8 @@ class CentralSystem(ChargePoint):
                 "connectorId": c_id,
                 "transactionId": int(transaction_id),
                 "idTag": session_info.get("id_tag", ""),
+                "vehicleId": session_info.get("vid"),
+                "mac": session_info.get("mac"),
                 "meterStart": meter_start,
                 "meterStop": meter_stop,
                 "energy": energy,
@@ -529,6 +581,7 @@ class StartReq(BaseModel):
     transactionId: int | None = None
     timestamp: str | None = None
     vid: str | None = None
+    mac: str | None = None
     kv: str | None = None
     kvMap: Dict[str, str] | None = None
     hash: str | None = None
@@ -583,6 +636,7 @@ class ActiveSession(BaseModel):
     stationId: int | None = None
     idTag: str | None = None
     vehicleId: str | None = None
+    mac: str | None = None
     transactionId: int | None = None
     lastSample: Dict[str, Any] | None = None
 
@@ -593,6 +647,8 @@ class CompletedSession(BaseModel):
     cpid: str
     connectorId: int
     idTag: str
+    vehicleId: str | None = None
+    mac: str | None = None
     transactionId: int
     meterStart: int
     meterStop: int
@@ -630,8 +686,17 @@ async def api_start(req: StartReq):
     try:
         id_tag = req.id_tag or DEFAULT_ID_TAG
         info = {"id_tag": id_tag}
+        vid = None
         if req.vid:
-            info["vid"] = vid_manager.get_or_create_vid("vid", req.vid)
+            vid = vid_manager.get_or_create_vid("vid", req.vid)
+        if req.mac:
+            mac_vid = vid_manager.get_or_create_vid("mac", req.mac)
+            info["mac"] = req.mac
+            if vid and vid != mac_vid:
+                vid_manager.link_temp_vid(mac_vid, vid)
+            vid = vid or mac_vid
+        if vid:
+            info["vid"] = vid
         cp.pending_start[int(req.connectorId)] = info
         status = await cp.remote_start(req.connectorId, id_tag)
         if status != RemoteStartStopStatus.accepted:
@@ -796,6 +861,7 @@ def api_active_sessions():
                     stationId=station_id,
                     idTag=info.get("id_tag"),
                     vehicleId=info.get("vid"),
+                    mac=info.get("mac"),
                     transactionId=info.get("transaction_id"),
                     lastSample=info.get("last_sample"),
                 )
@@ -930,6 +996,7 @@ def api_overview():
                     "transactionId": active.get("transaction_id"),
                     "idTag": active.get("id_tag"),
                     "vehicleId": active.get("vid"),
+                    "mac": active.get("mac"),
                     "startTime": start_time,
                     "meterStart": active.get("meter_start"),
                     "lastSample": active.get("last_sample"),

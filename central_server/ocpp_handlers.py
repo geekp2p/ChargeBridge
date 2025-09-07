@@ -49,6 +49,7 @@ async def on_data_transfer(request, session_context):
 
     if vendor_id == "MacID" and data:
         vid = vid_manager.get_or_create_vid("mac", data)
+        session_context["mac"] = data
         session_context["vid"] = vid
 
     return {}
@@ -74,8 +75,14 @@ async def on_authorize(request, session_context):
     """
     id_tag = getattr(request, "id_tag", None)
     vid = vid_manager.get_or_create_vid("id_tag", id_tag) if id_tag else None
+    mac = session_context.get("mac")
+    if mac:
+        mac_vid = vid_manager.get_or_create_vid("mac", mac)
+        if vid and vid != mac_vid:
+            vid_manager.link_temp_vid(mac_vid, vid)
+        vid = vid or mac_vid
     temp = session_context.get("vid")
     if temp and vid and temp != vid:
         vid_manager.link_temp_vid(temp, vid)
     session_context["vid"] = vid
-    return {"id_tag_info": {"status": "Accepted"}, "vid": vid}
+    return {"id_tag_info": {"status": "Accepted"}, "vid": vid, "mac": mac}
