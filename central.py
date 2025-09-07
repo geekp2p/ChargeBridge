@@ -379,7 +379,7 @@ class CentralSystem(ChargePoint):
             }
             self.completed_sessions.append(record)
             logging.info(f"Session summary: {record}")
-        return call_result.StopTransactionPayload(
+        return call_result.StopTransaction(
             id_tag_info={"status": AuthorizationStatus.accepted}
         )
 
