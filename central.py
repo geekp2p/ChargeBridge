@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import List, Any, Dict
 import itertools
 import threading
+from uuid import uuid4
 
 from websockets import serve
 from ocpp.routing import on
@@ -30,6 +31,11 @@ logging.basicConfig(level=logging.INFO)
 
 connected_cps: Dict[str, "CentralSystem"] = {}
 _tx_counter = itertools.count(1)
+
+
+def _generate_vid() -> str:
+    """Create a short pseudo-random vehicle identifier."""
+    return f"VID:{uuid4().hex[:8].upper()}"
 
 
 def _parse_timestamp(ts: str) -> datetime:
@@ -219,14 +225,20 @@ class CentralSystem(ChargePoint):
         c_id = int(connector_id)
         self.connector_status[c_id] = status
         if status == "Preparing":
-            vid = self.last_vid
+            pending = store.pending.get((self.id, c_id))
+            if pending and pending.vid:
+                vid = pending.vid
+            else:
+                vid = self.last_vid or _generate_vid()
             store.pending[(self.id, c_id)] = PendingSession(
                 station_id=self.id, connector_id=c_id, id_tag=vid, vid=vid
             )
+            self.pending_start[c_id] = {"vid": vid}
             self.last_vid = None
             store.pending.pop((self.id, 0), None)
         else:
             store.pending.pop((self.id, c_id), None)
+            self.pending_start.pop(c_id, None)
         if status in ("Preparing", "Occupied"):
             if c_id not in self.active_tx and c_id not in self.no_session_tasks:
                 self.no_session_tasks[c_id] = asyncio.create_task(

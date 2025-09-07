@@ -10,7 +10,7 @@
 | `GET` | `/api/v1/stations/{stationId}` | รายละเอียดสถานีและหัวชาร์จทุกตัว | `curl http://HOST:8080/api/v1/stations/1`<br>`{"id":1,"name":"Gresgying02","connectors":[{"id":1,"status":"Available"}]}` |
 | `DELETE` | `/api/v1/stations/{stationId}` | ลบสถานีหนึ่ง | `curl -X DELETE http://HOST:8080/api/v1/stations/1`<br>`{"ok":true}` |
 | `GET` | `/api/v1/status` | สถานะปัจจุบันของทุกหัวชาร์จที่เชื่อมต่อ | `curl http://HOST:8080/api/v1/status`<br>`{"connectors":[{"cpid":"Gresgying02","connectorId":1,"status":"Available"}]}` |
-| `GET` | `/api/v1/overview` | รวมสถานะพร้อมข้อมูล pending/active (แสดง VID ถ้ามี) | `curl http://HOST:8080/api/v1/overview`<br>`{"connectors":[{"cpid":"Gresgying02","connectorId":1,"status":"Preparing","pending":{"vid":"VID:XYZ"}}]}` |
+| `GET` | `/api/v1/overview` | รวมสถานะพร้อมข้อมูล pending/active (แสดง VID ที่สร้างอัตโนมัติเมื่อเสียบรถ) | `curl http://HOST:8080/api/v1/overview`<br>`{"connectors":[{"cpid":"Gresgying02","connectorId":1,"status":"Preparing","pending":{"vid":"VID:XYZ"}}]}` |
 | `GET` | `/api/v1/health` | ตรวจสอบสถานะของเซิร์ฟเวอร์ | `curl http://HOST:8080/api/v1/health`<br>`{"ok":true,"time":"2024-01-01T00:00:00Z"}` |
 
 ## การจัดการเซสชัน (เชื่อมต่อ OCPP)
@@ -24,7 +24,7 @@
 | `POST` | `/api/v1/reset` | สั่งรีเซ็ตชาร์จเจอร์ (`type` = Hard/Soft) | `curl -X POST http://HOST:8080/api/v1/reset -H 'Content-Type: application/json' -d '{"cpid":"Gresgying02","type":"Soft"}'`<br>`{"ok":true,"status":"Accepted"}` |
 | `GET` | `/api/v1/active` | เซสชันที่กำลังชาร์จอยู่ทั้งหมด | `curl http://HOST:8080/api/v1/active`<br>`{"sessions":[{"cpid":"Gresgying02","connectorId":1,"transactionId":1}]}` |
 | `GET` | `/api/v1/history` | เซสชันที่สิ้นสุดแล้ว | `curl http://HOST:8080/api/v1/history`<br>`{"sessions":[{"cpid":"Gresgying02","connectorId":1,"transactionId":1,"energy":1200}]}` |
-| `GET` | `/api/v1/pending` | เซสชันที่กำลังรอการเริ่มชาร์จ (รวม VID ถ้ามี) | `curl http://HOST:8080/api/v1/pending`<br>`[{"station_id":"Gresgying02","connector_id":1,"id_tag":"VID:FCA47A147858","vid":"VID:FCA47A147858","created_at":"2024-01-01T00:00:00"}]` |
+| `GET` | `/api/v1/pending` | เซสชันที่กำลังรอการเริ่มชาร์จ (ระบบสร้าง VID อัตโนมัติเมื่อเสียบรถ) | `curl http://HOST:8080/api/v1/pending`<br>`[{"station_id":"Gresgying02","connector_id":1,"id_tag":"VID:FCA47A147858","vid":"VID:FCA47A147858","created_at":"2024-01-01T00:00:00"}]` |
 
 ## In‑Memory Session (ไม่ส่ง OCPP)
 | Method | Path | อธิบาย | ตัวอย่าง |
