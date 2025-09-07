@@ -580,6 +580,14 @@ class ConnectorStatus(BaseModel):
     status: str
 
 
+class ConnectorOverview(BaseModel):
+    cpid: str
+    connectorId: int
+    status: str
+    pending: PendingSession | None = None
+    active: Dict[str, Any] | None = None
+
+
 def require_key(x_api_key: str | None):
     if API_KEY and x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="invalid api key")
@@ -875,6 +883,38 @@ async def api_connector_status():
         for conn_id, status in cp.connector_status.items():
             statuses.append(ConnectorStatus(cpid=cpid, connectorId=conn_id, status=status))
     return {"connectors": [s.dict() for s in statuses]}
+
+
+@app.get("/api/v1/overview")
+def api_overview():
+    connectors: list[ConnectorOverview] = []
+    for cpid, cp in connected_cps.items():
+        for conn_id, status in cp.connector_status.items():
+            pending = store.pending.get((cpid, conn_id))
+            active = cp.active_tx.get(conn_id)
+            active_info = None
+            if active:
+                start_time = active.get("start_time")
+                if isinstance(start_time, datetime):
+                    start_time = start_time.isoformat()
+                active_info = {
+                    "transactionId": active.get("transaction_id"),
+                    "idTag": active.get("id_tag"),
+                    "vehicleId": active.get("vid"),
+                    "startTime": start_time,
+                    "meterStart": active.get("meter_start"),
+                    "lastSample": active.get("last_sample"),
+                }
+            connectors.append(
+                ConnectorOverview(
+                    cpid=cpid,
+                    connectorId=conn_id,
+                    status=status,
+                    pending=pending,
+                    active=active_info,
+                )
+            )
+    return {"connectors": [c.model_dump() for c in connectors]}
 
 
 async def run_http_api():
