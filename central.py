@@ -65,6 +65,7 @@ class CentralSystem(ChargePoint):
         self.no_session_tasks: Dict[int, asyncio.Task] = {}
         self.completed_sessions: List[Dict[str, Any]] = []
         self.last_heartbeat: datetime | None = None
+        self.last_vid: str | None = None
 
     async def remote_start(self, connector_id: int, id_tag: str):
         req = call.RemoteStartTransaction(
@@ -203,9 +204,11 @@ class CentralSystem(ChargePoint):
     async def on_authorize(self, id_tag, **kwargs):
         logging.info(f"← Authorize request, idTag={id_tag}")
         conn_id = int(kwargs.get("connector_id", 0) or 0)
+        vid = id_tag if id_tag else None
         store.pending[(self.id, conn_id)] = PendingSession(
-            station_id=self.id, connector_id=conn_id, id_tag=id_tag
+            station_id=self.id, connector_id=conn_id, id_tag=id_tag, vid=vid
         )
+        self.last_vid = vid
         return call_result.Authorize(id_tag_info={"status": AuthorizationStatus.accepted})
 
     @on(Action.status_notification)
@@ -216,9 +219,11 @@ class CentralSystem(ChargePoint):
         c_id = int(connector_id)
         self.connector_status[c_id] = status
         if status == "Preparing":
+            vid = self.last_vid
             store.pending[(self.id, c_id)] = PendingSession(
-                station_id=self.id, connector_id=c_id
+                station_id=self.id, connector_id=c_id, id_tag=vid, vid=vid
             )
+            self.last_vid = None
             store.pending.pop((self.id, 0), None)
         else:
             store.pending.pop((self.id, c_id), None)
@@ -310,6 +315,16 @@ class CentralSystem(ChargePoint):
                 sanitized = sanitized[:2000] + "..."
             logging.debug("Sanitized DataTransfer payload from %s: %s", cp_id, sanitized)
 
+        vid = None
+        if isinstance(parsed, dict):
+            vid = parsed.get("vid") or parsed.get("vehicleId") or parsed.get("vehicle_id")
+        if vid:
+            self.last_vid = vid
+            for (sid, cid), pending in list(store.pending.items()):
+                if sid == self.id:
+                    pending.id_tag = vid
+                    pending.vid = vid
+
         return call_result.DataTransfer(status=DataTransferStatus.accepted)
 
     @on(Action.start_transaction)
@@ -349,6 +364,11 @@ class CentralSystem(ChargePoint):
         }
         if pending and "vid" in pending:
             info["vid"] = pending["vid"]
+        elif id_tag and id_tag.upper().startswith("VID"):
+            info["vid"] = id_tag
+        elif self.last_vid:
+            info["vid"] = self.last_vid
+            self.last_vid = None
         self.active_tx[int(connector_id)] = info
         task = self.no_session_tasks.pop(int(connector_id), None)
         if task:
@@ -572,7 +592,10 @@ async def api_start(req: StartReq):
         raise HTTPException(status_code=404, detail=f"ChargePoint '{req.cpid}' not connected")
     try:
         id_tag = req.id_tag or DEFAULT_ID_TAG
-        cp.pending_start[int(req.connectorId)] = {"id_tag": id_tag}
+        info = {"id_tag": id_tag}
+        if req.vid:
+            info["vid"] = req.vid
+        cp.pending_start[int(req.connectorId)] = info
         status = await cp.remote_start(req.connectorId, id_tag)
         if status != RemoteStartStopStatus.accepted:
             cp.pending_start.pop(int(req.connectorId), None)
