@@ -23,6 +23,7 @@ from ocpp.v16.enums import (
 from fastapi import FastAPI, HTTPException, Request, Header
 from pydantic import BaseModel, Field, ConfigDict, AliasChoices
 import uvicorn
+from api import store
 
 logging.basicConfig(level=logging.INFO)
 
@@ -405,6 +406,11 @@ async def log_requests(request: Request, call_next):
 @app.get("/api/v1/health")
 def health():
     return {"ok": True, "time": datetime.utcnow().isoformat() + "Z"}
+
+
+@app.get("/api/v1/stations")
+def get_stations():
+    return [station.model_dump() for station in store.stations.values()]
 
 
 class StartReq(BaseModel):

@@ -289,3 +289,11 @@ curl -H "X-API-Key: changeme-123" http://45.136.236.186:8080/api/v1/health
 
 > **Note:** If a stop command fails, issue `/charge/stop` followed by `/api/v1/release`
 > before unplugging the connector.
+
+### ตรวจสอบรายการสถานี
+
+ดึงข้อมูลสถานีทั้งหมดที่ระบบเก็บไว้ด้วยคำสั่ง:
+
+```bash
+curl http://localhost:8080/api/v1/stations
+```
