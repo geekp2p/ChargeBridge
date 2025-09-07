@@ -20,6 +20,7 @@
 | `POST` | `/api/v1/reset` | สั่งรีเซ็ตชาร์จเจอร์ (`type` = Hard/Soft) | `curl -X POST http://HOST:8080/api/v1/reset -H 'Content-Type: application/json' -d '{"cpid":"Gresgying02","type":"Soft"}'`
 | `GET` | `/api/v1/active` | เซสชันที่กำลังชาร์จอยู่ทั้งหมด | `curl http://HOST:8080/api/v1/active`
 | `GET` | `/api/v1/history` | เซสชันที่สิ้นสุดแล้ว | `curl http://HOST:8080/api/v1/history`
+| `GET` | `/api/v1/pending` | เซสชันที่กำลังรอการเริ่มชาร์จ | `curl http://HOST/api/v1/pending`
 
 ## In‑Memory Session (ไม่ส่ง OCPP)
 | Method | Path | อธิบาย | ตัวอย่าง |

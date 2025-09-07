@@ -24,6 +24,7 @@ from fastapi import FastAPI, HTTPException, Request, Header
 from pydantic import BaseModel, Field, ConfigDict, AliasChoices
 import uvicorn
 from api import store
+from api.models import PendingSession
 
 logging.basicConfig(level=logging.INFO)
 
@@ -201,6 +202,10 @@ class CentralSystem(ChargePoint):
     @on(Action.authorize)
     async def on_authorize(self, id_tag, **kwargs):
         logging.info(f"← Authorize request, idTag={id_tag}")
+        conn_id = int(kwargs.get("connector_id", 0) or 0)
+        store.pending[(self.id, conn_id)] = PendingSession(
+            station_id=self.id, connector_id=conn_id, id_tag=id_tag
+        )
         return call_result.Authorize(id_tag_info={"status": AuthorizationStatus.accepted})
 
     @on(Action.status_notification)
@@ -210,6 +215,13 @@ class CentralSystem(ChargePoint):
         )
         c_id = int(connector_id)
         self.connector_status[c_id] = status
+        if status == "Preparing":
+            store.pending[(self.id, c_id)] = PendingSession(
+                station_id=self.id, connector_id=c_id
+            )
+            store.pending.pop((self.id, 0), None)
+        else:
+            store.pending.pop((self.id, c_id), None)
         if status in ("Preparing", "Occupied"):
             if c_id not in self.active_tx and c_id not in self.no_session_tasks:
                 self.no_session_tasks[c_id] = asyncio.create_task(
@@ -325,6 +337,7 @@ class CentralSystem(ChargePoint):
 
         pending = self.pending_start.pop(int(connector_id), None)
         self.pending_remote.pop(int(connector_id), None)
+        store.pending.pop((self.id, int(connector_id)), None)
 
         tx_id = next(_tx_counter)
         info = {
@@ -525,6 +538,7 @@ async def api_start(req: StartReq):
         if status != RemoteStartStopStatus.accepted:
             cp.pending_start.pop(int(req.connectorId), None)
             raise HTTPException(status_code=409, detail=f"RemoteStart rejected: {status}")
+        store.pending.pop((req.cpid, int(req.connectorId)), None)
         return {"ok": True, "message": "RemoteStartTransaction sent"}
     except HTTPException:
         raise
@@ -653,6 +667,10 @@ async def api_reset(req: ResetReq):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.get("/api/v1/pending")
+def list_pending():
+    return list(store.pending.values())
 
 @app.get("/api/v1/active")
 def api_active_sessions():

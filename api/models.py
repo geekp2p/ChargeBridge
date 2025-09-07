@@ -26,3 +26,10 @@ class Station(BaseModel):
     name: str
     location: Optional[str] = None
     connectors: List[Connector] = Field(default_factory=list)
+
+
+class PendingSession(BaseModel):
+    station_id: str
+    connector_id: int
+    id_tag: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
