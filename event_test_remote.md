@@ -31,8 +31,7 @@ curl -X POST http://45.136.236.186:8080/api/v1/start -H "Content-Type: applicati
 curl -H "X-API-Key: changeme-123" http://45.136.236.186:8080/api/v1/active
 curl -X POST http://45.136.236.186:8080/api/v1/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"transactionId\":2}"
 curl -H "X-API-Key: changeme-123" http://45.136.236.186:8080/api/v1/active
-curl -H "X-API-Key: changeme-123" http://45.136.236.186:8080/api/v1/history
-curl -X POST http://45.136.236.186:8080/charge/stop -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":2}"
+@@ -36,26 +36,26 @@ curl -X POST http://45.136.236.186:8080/charge/stop -H "Content-Type: applicatio
 curl -X POST http://45.136.236.186:8080/api/v1/release -H "Content-Type: application/json" -H "X-API-Key: changeme-123" -d "{\"cpid\":\"Gresgying02\",\"connectorId\":2}"
 curl -X POST http://45.136.236.186:7071/unplug/2
 curl -H "X-API-Key: changeme-123" http://45.136.236.186:8080/api/v1/health
