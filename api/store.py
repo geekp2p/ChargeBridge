@@ -1,10 +1,8 @@
 from datetime import datetime
 from itertools import count
-from datetime import datetime
-from itertools import count
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from .models import ChargingSession, Connector, Station, PendingSession
+from .models import ChargingSession, Connector, PendingSession, Station
 
 stations: Dict[int, Station] = {}
 sessions: Dict[int, ChargingSession] = {}
