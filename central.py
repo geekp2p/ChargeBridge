@@ -471,8 +471,10 @@ class AvailabilityReq(BaseModel):
 class ActiveSession(BaseModel):
     cpid: str
     connectorId: int
-    idTag: str
-    transactionId: int
+    stationId: int | None = None
+    idTag: str | None = None
+    vehicleId: str | None = None
+    transactionId: int | None = None
     lastSample: Dict[str, Any] | None = None
 
 
@@ -645,16 +647,22 @@ async def api_reset(req: ResetReq):
 
 
 @app.get("/api/v1/active")
-async def api_active_sessions():
+def api_active_sessions():
     sessions: list[ActiveSession] = []
     for cpid, cp in connected_cps.items():
         for conn_id, info in cp.active_tx.items():
+            station_id = None
+            conn = store.get_connector(conn_id)
+            if conn is not None:
+                station_id = getattr(conn, "station_id", getattr(conn, "stationId", None))
             sessions.append(
                 ActiveSession(
                     cpid=cpid,
                     connectorId=conn_id,
-                    idTag=info.get("id_tag", ""),
-                    transactionId=info.get("transaction_id", 0),
+                    stationId=station_id,
+                    idTag=info.get("id_tag"),
+                    vehicleId=info.get("vid"),
+                    transactionId=info.get("transaction_id"),
                     lastSample=info.get("last_sample"),
                 )
             )
