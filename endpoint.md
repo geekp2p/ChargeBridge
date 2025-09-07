@@ -23,7 +23,7 @@
 | `POST` | `/api/v1/reset` | สั่งรีเซ็ตชาร์จเจอร์ (`type` = Hard/Soft) | `curl -X POST http://HOST:8080/api/v1/reset -H 'Content-Type: application/json' -d '{"cpid":"Gresgying02","type":"Soft"}'`<br>`{"ok":true,"status":"Accepted"}` |
 | `GET` | `/api/v1/active` | เซสชันที่กำลังชาร์จอยู่ทั้งหมด | `curl http://HOST:8080/api/v1/active`<br>`{"sessions":[{"cpid":"Gresgying02","connectorId":1,"transactionId":1}]}` |
 | `GET` | `/api/v1/history` | เซสชันที่สิ้นสุดแล้ว | `curl http://HOST:8080/api/v1/history`<br>`{"sessions":[{"cpid":"Gresgying02","connectorId":1,"transactionId":1,"energy":1200}]}` |
-| `GET` | `/api/v1/pending` | เซสชันที่กำลังรอการเริ่มชาร์จ | `curl http://HOST:8080/api/v1/pending`<br>`[{"station_id":"Gresgying02","connector_id":1,"id_tag":"VID:FCA47A147858"}]` |
+| `GET` | `/api/v1/pending` | เซสชันที่กำลังรอการเริ่มชาร์จ | `curl http://HOST:8080/api/v1/pending`<br>`[{"station_id":"Gresgying02","connector_id":1,"id_tag":"VID:FCA47A147858","created_at":"2024-01-01T00:00:00"}]` |
 
 ## In‑Memory Session (ไม่ส่ง OCPP)
 | Method | Path | อธิบาย | ตัวอย่าง |

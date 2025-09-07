@@ -718,7 +718,7 @@ async def api_reset(request: Request):
 
 @app.get("/api/v1/pending")
 def list_pending():
-    return list(store.pending.values())
+    return [p.model_dump() for p in store.pending.values()]
 
 @app.get("/api/v1/active")
 def api_active_sessions():
