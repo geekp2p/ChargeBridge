@@ -413,6 +413,14 @@ def get_stations():
     return [station.model_dump() for station in store.stations.values()]
 
 
+@app.get("/api/v1/stations/{station_id}")
+def get_station(station_id: int):
+    station = store.get_station(station_id)
+    if station is None:
+        raise HTTPException(status_code=404, detail="Station not found")
+    return station.model_dump()
+
+
 class StartReq(BaseModel):
     cpid: str
     connectorId: int
