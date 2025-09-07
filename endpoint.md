@@ -5,14 +5,12 @@
 ## สถานีและหัวชาร์จ
 | Method | Path | อธิบาย | ตัวอย่าง |
 |-------|------|--------|----------|
-| `POST` | `/stations` | เพิ่มสถานีใหม่ (ตัวอย่าง demo) | `curl -X POST http://HOST:8080/stations -H 'Content-Type: application/json' -d '{"name":"Demo","location":"BKK"}'`<br>`{"id":1,"name":"Demo","location":"BKK","connectors":[]}` |
-| `GET` | `/stations` | รายชื่อสถานีทั้งหมด (ตัวอย่าง demo) | `curl http://HOST:8080/stations`<br>`[{"id":1,"name":"Demo","location":"BKK","connectors":[]}]` |
-| `GET` | `/stations/{stationId}` | รายละเอียดสถานี (ตัวอย่าง demo) | `curl http://HOST:8080/stations/1`<br>`{"id":1,"name":"Demo","location":"BKK","connectors":[]}` |
-| `GET` | `/api/v1/health` | ตรวจสอบสถานะของเซิร์ฟเวอร์ | `curl http://HOST:8080/api/v1/health`<br>`{"ok":true,"time":"2024-01-01T00:00:00Z"}` |
+| `POST` | `/api/v1/stations` | เพิ่มสถานีใหม่ | `curl -X POST http://HOST:8080/api/v1/stations -H 'Content-Type: application/json' -d '{"name":"Demo","location":"BKK"}'`<br>`{"id":1,"name":"Demo","location":"BKK","connectors":[]}` |
 | `GET` | `/api/v1/stations` | รายชื่อสถานีพร้อมสถานะโดยรวม | `curl http://HOST:8080/api/v1/stations`<br>`[{"id":1,"name":"Gresgying02","connectors":[{"id":1,"status":"Available"}]}]` |
 | `GET` | `/api/v1/stations/{stationId}` | รายละเอียดสถานีและหัวชาร์จทุกตัว | `curl http://HOST:8080/api/v1/stations/1`<br>`{"id":1,"name":"Gresgying02","connectors":[{"id":1,"status":"Available"}]}` |
 | `DELETE` | `/api/v1/stations/{stationId}` | ลบสถานีหนึ่ง | `curl -X DELETE http://HOST:8080/api/v1/stations/1`<br>`{"ok":true}` |
 | `GET` | `/api/v1/status` | สถานะปัจจุบันของทุกหัวชาร์จที่เชื่อมต่อ | `curl http://HOST:8080/api/v1/status`<br>`{"connectors":[{"cpid":"Gresgying02","connectorId":1,"status":"Available"}]}` |
+| `GET` | `/api/v1/health` | ตรวจสอบสถานะของเซิร์ฟเวอร์ | `curl http://HOST:8080/api/v1/health`<br>`{"ok":true,"time":"2024-01-01T00:00:00Z"}` |
 
 ## การจัดการเซสชัน (เชื่อมต่อ OCPP)
 | Method | Path | อธิบาย | ตัวอย่าง |

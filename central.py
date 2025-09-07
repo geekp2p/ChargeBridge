@@ -21,7 +21,7 @@ from ocpp.v16.enums import (
 )
 
 from fastapi import FastAPI, HTTPException, Request, Header
-from pydantic import BaseModel, Field, ConfigDict, AliasChoices
+from pydantic import BaseModel, Field, ConfigDict, AliasChoices, ValidationError
 import uvicorn
 from api import store
 from api.models import PendingSession
