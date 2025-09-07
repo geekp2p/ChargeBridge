@@ -444,7 +444,11 @@ async def add_station(request: Request):
         form = await request.form()
         payload = dict(form) if form else dict(request.query_params)
 
-    data = StationIn(**payload)
+    try:
+        data = StationIn(**payload)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=e.errors())
+
     station = store.create_station(data.name, data.location)
     return station.model_dump()
 
@@ -693,7 +697,10 @@ async def api_reset(request: Request):
         form = await request.form()
         payload = dict(form) if form else dict(request.query_params)
 
-    data = ResetReq(**payload)
+    try:
+        data = ResetReq(**payload)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=e.errors())
     cp = connected_cps.get(data.cpid)
     if not cp:
         raise HTTPException(status_code=404, detail=f"ChargePoint '{data.cpid}' not connected")
