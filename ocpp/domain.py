@@ -33,6 +33,20 @@ class BootNotificationResponse:
 
 
 @dataclass(slots=True)
+class HeartbeatRequest:
+    """Empty payload for heartbeat calls."""
+
+    pass
+
+
+@dataclass(slots=True)
+class HeartbeatResponse:
+    """Return the central system's current time."""
+
+    current_time: datetime
+
+
+@dataclass(slots=True)
 class StatusNotificationRequest:
     """Notify the central system about a connector status change."""
 
