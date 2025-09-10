@@ -304,9 +304,10 @@ class CentralSystem(ChargePoint):
     @on(Action.heartbeat)
     def on_heartbeat(self, **kwargs):
         logging.info("← Heartbeat received")
-        # self.last_heartbeat = datetime.utcnow()
-        self.last_heartbeat = datetime.now(timezone.utc) 
-        return call_result.Heartbeat(current_time=self.last_heartbeat.isoformat() + "Z")
+        self.last_heartbeat = datetime.now(timezone.utc)
+        return call_result.Heartbeat(
+            current_time=self.last_heartbeat.isoformat().replace("+00:00", "Z")
+        )
 
     @on(Action.meter_values)
     async def on_meter_values(self, connector_id, meter_value, **kwargs):
