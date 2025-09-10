@@ -31,12 +31,14 @@ import uvicorn
 from api import store
 from api.models import PendingSession
 from services.vid_manager import VIDManager
+from services.wallet import WalletService
 
 logging.basicConfig(level=logging.INFO)
 
 connected_cps: Dict[str, "CentralSystem"] = {}
 _tx_counter = itertools.count(1)
 vid_manager = VIDManager()
+wallet = WalletService()
 
 
 def _parse_timestamp(ts: str) -> datetime:
@@ -456,6 +458,10 @@ class CentralSystem(ChargePoint):
             f"← StartTransaction from {self.id}: connector={connector_id}, idTag={id_tag}, meterStart={meter_start}, vid={info.get('vid')}"
         )
         logging.info(f"→ Assign transactionId={tx_id}")
+        vid = info.get("vid")
+        if vid and wallet.get_balance(vid) <= 0:
+            logging.info(f"Insufficient balance for {vid}; stopping transaction {tx_id}")
+            asyncio.create_task(self.remote_stop(tx_id))
         return call_result.StartTransaction(
             transaction_id=tx_id,
             id_tag_info={"status": AuthorizationStatus.accepted},
@@ -638,7 +644,26 @@ class ActiveSession(BaseModel):
     vehicleId: str | None = None
     mac: str | None = None
     transactionId: int | None = None
-    lastSample: Dict[str, Any] | None = None
+
+
+class UserIdentifier(BaseModel):
+    vid: str | None = None
+    mac: str | None = None
+    user_id: str | None = None
+    phone: str | None = None
+    app_id: str | None = None
+    transaction_id: str | None = None
+    qr_id: str | None = None
+
+    def first(self) -> tuple[str, str]:
+        for field, value in self.model_dump(exclude_none=True).items():
+            return field, value
+        raise ValueError("No identifier provided")
+
+
+class WalletReq(BaseModel):
+    identifier: UserIdentifier
+    amount: float
 
 
 class CompletedSession(BaseModel):
@@ -1011,6 +1036,32 @@ def api_overview():
                 )
             )
     return {"connectors": [c.model_dump() for c in connectors]}
+
+
+@app.post("/api/v1/identify")
+def api_identify(identifier: UserIdentifier):
+    field, value = identifier.first()
+    vid = vid_manager.get_or_create_vid(field, value)
+    return {"vid": vid}
+
+
+@app.post("/api/v1/wallet/topup")
+def api_wallet_topup(req: WalletReq):
+    field, value = req.identifier.first()
+    vid = vid_manager.get_or_create_vid(field, value)
+    balance = wallet.top_up(vid, req.amount)
+    return {"vid": vid, "balance": balance}
+
+
+@app.post("/api/v1/wallet/charge")
+def api_wallet_charge(req: WalletReq):
+    field, value = req.identifier.first()
+    vid = vid_manager.get_or_create_vid(field, value)
+    try:
+        balance = wallet.deduct(vid, req.amount)
+    except ValueError:
+        raise HTTPException(status_code=402, detail="Insufficient balance")
+    return {"vid": vid, "balance": balance}
 
 
 async def run_http_api():
