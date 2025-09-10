@@ -534,30 +534,10 @@ class StationIn(BaseModel):
 
 @app.post("/api/v1/stations")
 @app.post("/stations", include_in_schema=False)
-async def add_station(request: Request):
-    """Register a new charging station.
-
-    Tries to parse a JSON body first and falls back to query parameters or
-    form data. This makes the endpoint more tolerant of clients that cannot
-    easily send JSON payloads.
-    """
-    payload: Dict[str, Any]
-    try:
-        payload = await request.json()
-    except Exception:
-        # FastAPI raises a 422 when JSON decoding fails. To provide a more
-        # user friendly experience we accept parameters from the query string
-        # or form encoded bodies as a fallback.
-        form = await request.form()
-        payload = dict(form) if form else dict(request.query_params)
-
-    try:
-        data = StationIn(**payload)
-    except ValidationError as e:
-        raise HTTPException(status_code=400, detail=e.errors())
-
+def add_station(data: StationIn):
     station = store.create_station(data.name, data.location)
     return station.model_dump()
+
 
 @app.get("/api/v1/stations")
 @app.get("/stations", include_in_schema=False)
@@ -572,7 +552,6 @@ def get_station(station_id: int):
     if station is None:
         raise HTTPException(status_code=404, detail="Station not found")
     return station.model_dump()
-
 
 @app.delete("/api/v1/stations/{station_id}")
 def delete_station(station_id: int):
