@@ -540,7 +540,8 @@ async def log_requests(request: Request, call_next):
 
 @app.get("/api/v1/health")
 def health():
-    return {"ok": True, "time": datetime.utcnow().isoformat() + "Z"}
+    now = datetime.now(timezone.utc)
+    return {"ok": True, "time": now.isoformat().replace("+00:00", "Z")}
 
 class StationIn(BaseModel):
     name: str
@@ -911,7 +912,7 @@ def api_start_session(connector_id: int, req: SessionStartReq):
         "connector_id": connector_id,
         "vehicleId": req.vehicleId,
         "status": "active",
-        "started_at": datetime.utcnow().isoformat() + "Z",
+        "started_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
     store.sessions[tx_id] = session
     try:
@@ -937,7 +938,7 @@ def api_stop_session(connector_id: int, req: SessionStopReq):
             break
     if active_session is None:
         raise HTTPException(status_code=404, detail="Active session not found")
-    finished_at = datetime.utcnow().isoformat() + "Z"
+    finished_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     if isinstance(active_session, dict):
         active_session["finishedAt"] = finished_at
         active_session["kWhDelivered"] = req.kWhDelivered
