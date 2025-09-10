@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Any, Dict
 import itertools
 import threading
@@ -153,24 +153,38 @@ class CentralSystem(ChargePoint):
 
     @on(Action.boot_notification)
     async def on_boot_notification(self, charge_point_model, charge_point_vendor, **kwargs):
-        logging.info(f"← BootNotification from vendor={charge_point_vendor}, model={charge_point_model}")
-        response = call_result.BootNotification(
-            current_time=datetime.utcnow().isoformat() + "Z",
-            interval=300,
-            status=RegistrationStatus.accepted
+        logging.info(
+            f"← BootNotification from vendor={charge_point_vendor}, model={charge_point_model}"
         )
+        response = call_result.BootNotification(
+            current_time=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            interval=300,
+            status=RegistrationStatus.accepted,
+        )
+
+        asyncio.create_task(self._post_boot_actions())
+
+        return response
+
+    async def _post_boot_actions(self) -> None:
+        await asyncio.sleep(0)
 
         supported_keys: List[str] = []
         try:
-            conf_req = call.GetConfiguration()
-            conf_resp = await asyncio.wait_for(self.call(conf_req), timeout=10)
+            conf_resp = await asyncio.wait_for(
+                self.call(call.GetConfiguration()), timeout=10
+            )
             items: Any = []
             if hasattr(conf_resp, "configuration_key"):
                 items = getattr(conf_resp, "configuration_key")
             elif hasattr(conf_resp, "configurationKey"):
                 items = getattr(conf_resp, "configurationKey")
             elif isinstance(conf_resp, dict):
-                items = conf_resp.get("configuration_key") or conf_resp.get("configurationKey") or []
+                items = (
+                    conf_resp.get("configuration_key")
+                    or conf_resp.get("configurationKey")
+                    or []
+                )
             for entry in items:
                 if isinstance(entry, dict):
                     key_name = entry.get("key")
@@ -179,7 +193,9 @@ class CentralSystem(ChargePoint):
                 if key_name:
                     supported_keys.append(key_name)
         except asyncio.TimeoutError:
-            logging.warning("Timeout fetching GetConfiguration; proceeding without supported keys.")
+            logging.warning(
+                "Timeout fetching GetConfiguration; proceeding without supported keys."
+            )
         except Exception as e:
             logging.warning(f"Failed to fetch supported configuration keys: {e}")
 
@@ -187,21 +203,19 @@ class CentralSystem(ChargePoint):
             cfg_req = call.ChangeConfiguration(
                 key="AuthorizeRemoteTxRequests", value="true"
             )
-            asyncio.create_task(self._send_change_configuration(cfg_req))
+            await self._send_change_configuration(cfg_req)
 
         qr_url = "https://your-domain.com/qr?order_id=TEST123"
         target_key = "QRcodeConnectorID1"
         if target_key in supported_keys:
             change_req = call.ChangeConfiguration(key=target_key, value=qr_url)
-            asyncio.create_task(self._send_change_configuration(change_req))
+            await self._send_change_configuration(change_req)
         else:
             try:
                 fallback = make_display_message_call(message_type="QRCode", uri=qr_url)
-                asyncio.create_task(self._send_change_configuration(fallback))
+                await self._send_change_configuration(fallback)
             except Exception as e:
                 logging.error(f"Failed to send fallback display message: {e}")
-
-        return response
 
     async def _send_change_configuration(self, request_payload):
         try:
