@@ -304,7 +304,8 @@ class CentralSystem(ChargePoint):
     @on(Action.heartbeat)
     def on_heartbeat(self, **kwargs):
         logging.info("← Heartbeat received")
-        self.last_heartbeat = datetime.utcnow()
+        # self.last_heartbeat = datetime.utcnow()
+        self.last_heartbeat = datetime.now(timezone.utc) 
         return call_result.Heartbeat(current_time=self.last_heartbeat.isoformat() + "Z")
 
     @on(Action.meter_values)
